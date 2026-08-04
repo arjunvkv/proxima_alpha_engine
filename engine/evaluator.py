@@ -8,11 +8,13 @@ from strategies.cppf_z import evaluate_cppf_z
 from strategies.msv_asian import evaluate_msv_asian
 from strategies.ny_h21 import evaluate_ny_h21
 from strategies.cpmc_z import evaluate_cpmc_z
+from strategies.test_probe import evaluate_test_probe
 
 class StrategyEvaluator:
     def __init__(self, config_suite):
         self.suite = config_suite
         self.evaluators = {
+            "test_probe": evaluate_test_probe,
             "tokyo_h0": evaluate_tokyo_h0,
             "ultra_monster": evaluate_ultra_monster,
             "cppf_z": evaluate_cppf_z,

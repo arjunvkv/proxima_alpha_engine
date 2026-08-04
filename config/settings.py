@@ -23,6 +23,15 @@ RETRY_DELAY_MS = 15                    # 15ms retry backoff delay
 
 # 6 Core Portfolio Strategies & Fixed Lot Sizing Specs
 STRATEGY_SUITE = {
+    "test_probe": {
+        "name": "Test Probe",
+        "lot": 0.01,
+        "magic": 999999,
+        "hold_bars": 1,
+        "universe": ["EURUSD"],
+        "anchor_pair": "EURUSD",
+        "proven_wr": 100.0
+    },
     "tokyo_h0": {
         "name": "Tokyo H0",
         "lot": 1.00,
