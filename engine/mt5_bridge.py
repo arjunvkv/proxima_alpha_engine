@@ -174,7 +174,8 @@ class MT5Bridge:
 
         try:
             if rpyc_conn is not None and hasattr(rpyc_conn.root, 'fetch_m5_rates'):
-                rates = rpyc_conn.root.fetch_m5_rates(symbol, count)
+                with MT5_LOCK:
+                    rates = rpyc_conn.root.fetch_m5_rates(symbol, count)
             else:
                 with MT5_LOCK:
                     mt5.symbol_select(symbol, True)
@@ -204,7 +205,8 @@ class MT5Bridge:
             return {}
         try:
             if rpyc_conn is not None and hasattr(rpyc_conn.root, 'fetch_ticks'):
-                return rpyc_conn.root.fetch_ticks(list(symbols))
+                with MT5_LOCK:
+                    return rpyc_conn.root.fetch_ticks(list(symbols))
             out = {}
             with MT5_LOCK:
                 for sym in symbols:
@@ -222,19 +224,12 @@ class MT5Bridge:
             return {}
 
     def fetch_tick_velocity(self, symbols, window_sec=1.0):
-        """Real tick velocity: count actual ticks arriving per second across all symbols.
-
-        Samples the highest tick timestamp per symbol, then measures how many
-        fresh ticks arrived during a live window. Requires two polls — on the
-        native path a millisecond-granularity tick counter is approximated via
-        distinct tick timestamps across the window.
-        """
         if not HAS_MT5_LIB or mt5 is None:
             return 0.0
         try:
             if rpyc_conn is not None and hasattr(rpyc_conn.root, 'fetch_tick_velocity'):
-                return rpyc_conn.root.fetch_tick_velocity(list(symbols), window_sec)
-            # Native MT5: poll symbol_info_tick twice and count fresh tick timestamps.
+                with MT5_LOCK:
+                    return rpyc_conn.root.fetch_tick_velocity(list(symbols), window_sec)
             import time as _t
             def _sample():
                 snap = {}
@@ -262,7 +257,8 @@ class MT5Bridge:
             return []
         try:
             if rpyc_conn is not None and hasattr(rpyc_conn.root, 'fetch_history_deals'):
-                return rpyc_conn.root.fetch_history_deals(from_time, days)
+                with MT5_LOCK:
+                    return rpyc_conn.root.fetch_history_deals(from_time, days)
             import time as _time
             end = int(_time.time())
             start = end - days * 86400
