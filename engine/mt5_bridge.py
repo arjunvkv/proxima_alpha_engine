@@ -51,6 +51,10 @@ def get_mt5():
     _ensure_wine_mt5_server()
     try:
         import rpyc
+        import rpyc.core.protocol
+        rpyc.core.protocol.DEFAULT_CONFIG['allow_pickle'] = True
+        rpyc.core.protocol.DEFAULT_CONFIG['allow_all_attrs'] = True
+
         rpyc_conn = rpyc.connect('127.0.0.1', 18812, config={'allow_all_attrs': True, 'allow_pickle': True})
         mt5 = rpyc_conn.root.get_mt5()
         HAS_MT5_LIB = True

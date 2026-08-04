@@ -4,6 +4,12 @@ Auto-initializes MT5 on startup and exposes clean data structures over RPyC sock
 """
 import sys
 import rpyc
+import rpyc.core.protocol
+
+# Globally enable pickling in RPyC protocol
+rpyc.core.protocol.DEFAULT_CONFIG['allow_pickle'] = True
+rpyc.core.protocol.DEFAULT_CONFIG['allow_all_attrs'] = True
+
 import MetaTrader5 as mt5
 from rpyc.utils.server import ThreadedServer
 
