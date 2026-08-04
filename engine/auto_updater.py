@@ -43,7 +43,7 @@ HOT_RELOAD_MODULES = [
 
 
 class AutoUpdater:
-    def __init__(self, repo_dir, check_interval_sec=15):
+    def __init__(self, repo_dir, check_interval_sec=60):
         self.repo_dir = Path(repo_dir)
         self.check_interval_sec = check_interval_sec
         self.running = False
@@ -53,7 +53,7 @@ class AutoUpdater:
         self.running = True
         self._thread = threading.Thread(target=self._poll_loop, daemon=True)
         self._thread.start()
-        print("🟢 [AutoUpdater] Git Push Auto-Puller started (15s interval). Critical-file changes → full self-restart.")
+        print("🟢 [AutoUpdater] Git Push Auto-Puller started (60s interval). Critical-file changes → full self-restart.")
 
     def stop(self):
         self.running = False
@@ -76,7 +76,7 @@ class AutoUpdater:
         while self.running:
             time.sleep(self.check_interval_sec)
             try:
-                subprocess.run(["git", "fetch"], cwd=self.repo_dir, capture_output=True, text=True, timeout=10)
+                subprocess.run(["git", "fetch", "--depth=1"], cwd=self.repo_dir, capture_output=True, text=True, timeout=15)
                 res_status = subprocess.run(["git", "status", "-uno"], cwd=self.repo_dir, capture_output=True, text=True)
 
                 if "Your branch is behind" not in res_status.stdout:

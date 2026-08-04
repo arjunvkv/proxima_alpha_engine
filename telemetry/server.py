@@ -383,7 +383,7 @@ def _background_broadcaster():
             })
         except Exception:
             pass
-        time.sleep(1.0)
+        time.sleep(3.0)
 
 # ─── Public Entry Point (called by run.py) ────────────────────────────────────
 
