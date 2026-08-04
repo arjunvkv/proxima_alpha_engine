@@ -9,6 +9,13 @@ import time
 from pathlib import Path
 from datetime import datetime, timezone
 
+try:
+    import MetaTrader5 as mt5
+    HAS_MT5_LIB = True
+except ImportError:
+    mt5 = None
+    HAS_MT5_LIB = False
+
 # Add repo root to sys.path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
@@ -46,7 +53,6 @@ def main():
     tracker = PositionTracker(execution_guard=guard)
     evaluator = StrategyEvaluator(config_suite=STRATEGY_SUITE)
 
-    # Collect all required symbols across portfolio
     all_symbols = set()
     for strat in STRATEGY_SUITE.values():
         all_symbols.update(strat["universe"])
@@ -59,30 +65,25 @@ def main():
     try:
         while True:
             utc_now = bridge.get_server_utc_time()
-            
-            # Evaluate strategy signals on M5 bar boundary (every 5 minutes)
+
             if last_eval_time is None or (utc_now.minute % 5 == 0 and utc_now.minute != last_eval_time.minute):
                 last_eval_time = utc_now
                 print(f"\n⏰ [M5 Bar Boundary] {utc_now.strftime('%Y-%m-%d %H:%M:%S UTC')} — Evaluating Strategy Signals...")
 
-                # Fetch latest M5 rates
                 df_dict = bridge.fetch_all_universes_df(list(all_symbols), count=300)
 
-                # Check Daily Drawdown Shield
-                import MetaTrader5 as mt5
-                acc_info = mt5.account_info()
-                if acc_info:
-                    risk_mgr.update_daily_baseline(acc_info.equity)
-                    shield_ok, shield_reason = risk_mgr.check_daily_drawdown_shield(acc_info.equity)
-                    if not shield_ok:
-                        print(f"🛑 [RiskShield] {shield_reason}. Skipping new entries.")
-                        time.sleep(5)
-                        continue
+                if HAS_MT5_LIB and mt5:
+                    acc_info = mt5.account_info()
+                    if acc_info:
+                        risk_mgr.update_daily_baseline(acc_info.equity)
+                        shield_ok, shield_reason = risk_mgr.check_daily_drawdown_shield(acc_info.equity)
+                        if not shield_ok:
+                            print(f"🛑 [RiskShield] {shield_reason}. Skipping new entries.")
+                            time.sleep(5)
+                            continue
 
-                # Update position hold timers
                 tracker.update_bar_hold_timers(utc_now.strftime("%Y-%m-%d %H:%M:%S"))
 
-                # Evaluate strategy signals
                 signals = evaluator.evaluate_all(df_dict, utc_now)
                 if signals:
                     print(f"🔥 [Signals] Generated {len(signals)} Active Signals!")
@@ -93,7 +94,6 @@ def main():
                         lot        = sig["lot"]
                         cfg        = next(c for c in STRATEGY_SUITE.values() if c["name"] == strat_name)
 
-                        # Execute Order via Execution Guard
                         ticket, status = guard.execute_market_order(
                             symbol=pair,
                             side=side,

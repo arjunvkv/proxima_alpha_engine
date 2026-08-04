@@ -1,8 +1,14 @@
 """
-Risk Manager — Daily Drawdown Shield (4.5% FTMO Shield) & Cross-Pair Pip Value USD Calculator
+Risk Manager — Daily Drawdown Shield (4.5% FTMO Shield) & Cross-Pair Pip Value USD Calculator.
+Safe cross-platform import guard.
 """
 
-import MetaTrader5 as mt5
+try:
+    import MetaTrader5 as mt5
+    HAS_MT5_LIB = True
+except ImportError:
+    mt5 = None
+    HAS_MT5_LIB = False
 
 class RiskManager:
     def __init__(self, daily_drawdown_limit_pct=0.045):
@@ -14,9 +20,6 @@ class RiskManager:
             self.initial_day_equity = account_equity
 
     def check_daily_drawdown_shield(self, current_equity):
-        """
-        Halts new trade entries if daily drawdown exceeds 4.5% limit.
-        """
         if self.initial_day_equity is None or self.initial_day_equity <= 0:
             return True, "BASELINE_OK"
 
@@ -27,17 +30,16 @@ class RiskManager:
         return True, "SHIELD_OK"
 
     def get_pip_value_usd(self, symbol):
-        """
-        Computes exact USD value per pip for cross pairs dynamically.
-        """
         if "USD" in symbol and symbol.endswith("USD"):
-            return 10.0  # EURUSD, GBPUSD, AUDUSD, NZDUSD
+            return 10.0
+
+        if not HAS_MT5_LIB or mt5 is None:
+            return 10.0
 
         sym_info = mt5.symbol_info(symbol)
         if sym_info is None:
             return 10.0
 
-        # Extract quote currency (e.g. AUD in EURAUD, JPY in USDJPY)
         quote_currency = symbol[3:]
 
         if quote_currency == "USD":
