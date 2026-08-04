@@ -68,19 +68,36 @@ class MT5Bridge:
         self.tz_offset = timedelta(hours=timezone_offset_hours)
         self.connected = False
 
+    _using_rpyc = False  # class-level flag
+
     def connect(self):
         global mt5, HAS_MT5_LIB
         mt5, HAS_MT5_LIB = get_mt5()
         if not HAS_MT5_LIB or mt5 is None:
-            print("⚠️ [MT5Bridge] MetaTrader5 package not loaded natively or via bridge. Running in Simulation mode.")
+            print("⚠️ [MT5Bridge] MetaTrader5 not loaded. Running in Simulation mode.")
             self.connected = True
             return True
 
-        init_ok = False
+        # RPyC bridge: MT5 already initialized server-side — skip initialize()
+        try:
+            account_info = mt5.account_info()
+            if account_info is not None:
+                self.connected = True
+                login = getattr(account_info, 'login', 'Unknown')
+                company = getattr(account_info, 'company', 'Unknown')
+                balance = getattr(account_info, 'balance', 0.0)
+                equity = getattr(account_info, 'equity', 0.0)
+                print(f"🟢 [MT5Bridge] Connected to MT5 Account #{login} ({company}) | Balance: ${balance:,.2f} | Equity: ${equity:,.2f}")
+                return True
+        except Exception:
+            pass
+
+        # Native mode: call initialize() with path
         try:
             init_ok = mt5.initialize(path=self.mt5_path) if self.mt5_path else mt5.initialize()
         except Exception as e:
             print(f"⚠️ [MT5Bridge] MT5 initialize exception: {e}")
+            init_ok = False
 
         if not init_ok:
             print(f"❌ [MT5Bridge] Failed to initialize MT5: {mt5.last_error()}")
@@ -88,7 +105,7 @@ class MT5Bridge:
 
         account_info = mt5.account_info()
         if account_info is None:
-            print("❌ [MT5Bridge] Failed to fetch account info.")
+            print("❌ [MT5Bridge] Failed to fetch account info after initialize.")
             return False
 
         self.connected = True
