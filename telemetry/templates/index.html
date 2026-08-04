@@ -32,8 +32,8 @@
         <div class="account-profile-badge">
             <i class="fa-solid fa-shield-halved text-emerald"></i>
             <div class="profile-info">
-                <span class="profile-title">$25,000 Capital Profile</span>
-                <span class="profile-meta">DD Shield: 4.5% Max</span>
+                <span class="profile-title" id="accountProfileTitle">—</span>
+                <span class="profile-meta" id="accountProfileMeta">DD Shield: 4.5% Max</span>
             </div>
         </div>
         <div class="server-telemetry">
@@ -43,7 +43,50 @@
         </div>
     </header>
 
+    <!-- LIVE TICKER MARQUEE -->
+    <div class="ticker-strip">
+        <div class="ticker-label"><i class="fa-solid fa-bolt"></i> LIVE FEED</div>
+        <div class="ticker-viewport" id="tickerViewport">
+            <div class="ticker-track" id="tickerTrack"></div>
+        </div>
+    </div>
+
+    <!-- TOAST STACK (game notifications) -->
+    <div class="toast-stack" id="toastStack"></div>
+
     <main class="dashboard-container">
+
+        <!-- GAME HUD: XP / LEVEL / STREAK / BADGES -->
+        <section class="game-hud shadow-glow">
+            <div class="game-hud-player">
+                <div class="player-avatar"><i class="fa-solid fa-robot"></i></div>
+                <div class="player-identity">
+                    <span class="player-title" id="gamePlayerTitle">PROXIMA PILOT</span>
+                    <span class="player-level" id="gamePlayerLevel">LVL 1</span>
+                </div>
+                <div class="xp-wrap">
+                    <div class="xp-bar-wrap">
+                        <div class="xp-bar-fill" id="gameXpFill" style="width: 0%;"></div>
+                    </div>
+                    <span class="xp-text font-mono" id="gameXpText">0 XP</span>
+                </div>
+            </div>
+            <div class="game-hud-stats">
+                <div class="game-stat">
+                    <span class="meta-label">WIN STREAK</span>
+                    <span class="game-stat-val text-emerald" id="gameStreakOverall">0</span>
+                </div>
+                <div class="game-stat">
+                    <span class="meta-label">BADGES</span>
+                    <span class="game-stat-val text-amber" id="gameBadges">0/0</span>
+                </div>
+                <div class="game-stat">
+                    <span class="meta-label">TOP STREAK</span>
+                    <span class="game-stat-val text-cyan font-mono" id="gameTopStrategy">—</span>
+                </div>
+            </div>
+            <div class="badge-strip" id="badgeStrip"></div>
+        </section>
 
         <!-- HERO BANNER -->
         <section class="hero-predictive-banner shadow-glow">
@@ -104,11 +147,43 @@
             </div>
         </section>
 
+        <!-- RADAR SWEEP + EQUITY CHART -->
+        <section class="radar-sweep-grid">
+            <div class="radar-sweep-card">
+                <div class="radar-sweep" id="radarSweep">
+                    <div class="radar-sweep-blade"></div>
+                    <div class="radar-sweep-ring r1"></div>
+                    <div class="radar-sweep-ring r2"></div>
+                    <div class="radar-sweep-ring r3"></div>
+                    <div class="radar-sweep-center"><i class="fa-solid fa-crosshairs"></i></div>
+                    <div class="radar-blip" style="top:30%;left:62%;"></div>
+                    <div class="radar-blip" style="top:58%;left:30%;"></div>
+                    <div class="radar-blip" style="top:20%;left:40%;"></div>
+                </div>
+                <div class="radar-sweep-meta">
+                    <span class="meta-label">SWEEP REGIME</span>
+                    <strong class="text-cyan" id="radarSweepRegime">COMPRESSION</strong>
+                    <span class="meta-label" style="margin-top:0.4rem;">TICK VELOCITY</span>
+                    <strong class="font-mono" id="radarSweepVelocity">0.0</strong>
+                </div>
+            </div>
+            <div class="equity-chart-card">
+                <div class="card-header"><i class="fa-solid fa-chart-line text-emerald"></i><span>LIVE EQUITY CURVE</span></div>
+                <canvas id="equityCanvas" height="220"></canvas>
+                <div class="equity-chart-meta">
+                    <span class="meta-label">EQUITY</span>
+                    <strong class="font-mono text-emerald" id="equityChartNow">—</strong>
+                    <span class="meta-label">START</span>
+                    <strong class="font-mono" id="equityChartStart">—</strong>
+                </div>
+            </div>
+        </section>
+
         <!-- STRATEGY CARDS -->
         <section class="strategy-matrix-section">
             <div class="section-title-bar">
                 <h3><i class="fa-solid fa-clock-rotate-left"></i> 6-STRATEGY PYTHON EXECUTION MATRIX</h3>
-                <span class="subtitle">Live countdowns & proven backtest outcomes — $25k profile</span>
+                <span class="subtitle">Live countdowns & real performance stats — read-only dashboard</span>
             </div>
             <div class="strategy-cards-container" id="strategyCardsContainer"></div>
         </section>

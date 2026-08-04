@@ -30,6 +30,26 @@ document.addEventListener('DOMContentLoaded', () => {
     const radarRegime = document.getElementById('radarRegime');
     const radarRegimeDesc = document.getElementById('radarRegimeDesc');
 
+    const radarSweepRegime = document.getElementById('radarSweepRegime');
+    const radarSweepVelocity = document.getElementById('radarSweepVelocity');
+
+    const accountProfileTitle = document.getElementById('accountProfileTitle');
+    const accountProfileMeta = document.getElementById('accountProfileMeta');
+
+    const equityCanvas = document.getElementById('equityCanvas');
+    const equityChartNow = document.getElementById('equityChartNow');
+    const equityChartStart = document.getElementById('equityChartStart');
+
+    const tickerTrack = document.getElementById('tickerTrack');
+    const toastStack = document.getElementById('toastStack');
+    const gamePlayerLevel = document.getElementById('gamePlayerLevel');
+    const gameXpFill = document.getElementById('gameXpFill');
+    const gameXpText = document.getElementById('gameXpText');
+    const gameStreakOverall = document.getElementById('gameStreakOverall');
+    const gameBadges = document.getElementById('gameBadges');
+    const gameTopStrategy = document.getElementById('gameTopStrategy');
+    const badgeStrip = document.getElementById('badgeStrip');
+
     const strategyCardsContainer = document.getElementById('strategyCardsContainer');
     const auditTableBody = document.getElementById('auditTableBody');
 
@@ -79,6 +99,12 @@ document.addEventListener('DOMContentLoaded', () => {
         if (consoleLogBody) updateVPSLogs(data.vps_logs);
         if (exposureTableBody) updateExposureTable(data.exposure);
         if (rollingBacktestTableBody) updateRollingBacktest(data.rolling_backtest);
+        if (gamePlayerLevel) updateGameState(data.game);
+        if (tickerTrack) updateTicker(data.ticker);
+        if (accountProfileTitle) updateAccountProfile(data.config, data.health);
+        if (radarSweepRegime) updateRadarSweep(data.radar);
+        if (equityCanvas) updateEquityChart(data.rolling_backtest, data.mt5_telemetry);
+        checkForNewCloses(data.mt5_telemetry);
     });
 
     function updatePredictiveHero(imm) {
@@ -91,9 +117,14 @@ document.addEventListener('DOMContentLoaded', () => {
         imminentDirection.textContent = imm.direction || "BUY";
         imminentDirection.className = `dir-badge ${(imm.direction || 'BUY').toLowerCase()}`;
 
-        const conf = imm.confidence || 94.2;
-        imminentConfidenceFill.style.width = `${conf}%`;
-        imminentConfidenceVal.textContent = `${conf}%`;
+        const conf = imm.confidence !== null && imm.confidence !== undefined ? imm.confidence : null;
+        if (conf !== null) {
+            imminentConfidenceFill.style.width = `${conf}%`;
+            imminentConfidenceVal.textContent = `${conf}%`;
+        } else {
+            imminentConfidenceFill.style.width = '0%';
+            imminentConfidenceVal.textContent = '—';
+        }
 
         imminentTargetWin.textContent = `+$${(imm.target_win_usd || 195.04).toFixed(2)}`;
     }
@@ -106,6 +137,168 @@ document.addEventListener('DOMContentLoaded', () => {
         radarAgreement.textContent = `${radar.directional_agreement_pct}%`;
         radarRegime.textContent = radar.volatility_regime;
         radarRegimeDesc.textContent = radar.regime_description;
+    }
+
+    function updateRadarSweep(radar) {
+        if (!radar) return;
+        if (radarSweepRegime) radarSweepRegime.textContent = (radar.volatility_regime || 'COMPRESSION').replace(/[^\x00-\x7F]/g, '').trim() || 'COMPRESSION';
+        if (radarSweepVelocity) radarSweepVelocity.textContent = `${radar.tick_velocity_per_sec} t/s`;
+        const blade = document.querySelector('.radar-sweep-blade');
+        if (blade) {
+            // Velocity drives sweep speed (min 2s, max 0.5s per revolution)
+            const v = Math.max(0.5, Math.min(2.0, 60 / Math.max(radar.tick_velocity_per_sec, 1)));
+            blade.style.animationDuration = `${v}s`;
+        }
+    }
+
+    function updateAccountProfile(config, health) {
+        if (!config) return;
+        const eq = config.account_size || 0;
+        accountProfileTitle.textContent = `$${eq.toLocaleString('en-US', {maximumFractionDigits: 0})} Capital Profile`;
+        const live = health && health.connected ? 'LIVE' : 'SIM';
+        const sha = health && health.git_sha && health.git_sha !== 'unknown' ? ` · ${health.git_sha}` : '';
+        accountProfileMeta.textContent = `DD Shield: 4.5% Max · ${live}${sha}`;
+    }
+
+    function updateGameState(game) {
+        if (!game) return;
+        gamePlayerLevel.textContent = `LVL ${game.level}`;
+        gameXpFill.style.width = `${game.level_progress_pct}%`;
+        gameXpText.textContent = `${game.xp} XP · ${game.xp_to_next} to next`;
+        gameStreakOverall.textContent = game.streak_overall;
+        gameBadges.textContent = `${game.badges_unlocked}/${game.badges_total}`;
+
+        const streaks = game.streaks || {};
+        let top = null;
+        for (const [name, val] of Object.entries(streaks)) {
+            if (!top || val > top.val) top = { name, val };
+        }
+        gameTopStrategy.textContent = top && top.val > 0 ? `${top.name} ${top.val}🔥` : '—';
+
+        if (badgeStrip && game.badges) {
+            badgeStrip.innerHTML = '';
+            game.badges.forEach((b) => {
+                const chip = document.createElement('div');
+                chip.className = `badge-chip ${b.unlocked ? 'unlocked' : 'locked'}`;
+                chip.title = `${b.name} — ${b.desc}`;
+                chip.innerHTML = `<i class="fa-solid ${b.icon}"></i><span class="badge-tip">${b.name} — ${b.desc}</span>`;
+                badgeStrip.appendChild(chip);
+            });
+        }
+    }
+
+    let lastTickerHtml = '';
+    function updateTicker(items) {
+        if (!items || !items.length) return;
+        const html = items.map((it) => {
+            if (it.kind === 'TRADE') {
+                const cls = it.pnl >= 0 ? 'tick-pnl-pos' : 'tick-pnl-neg';
+                const sign = it.pnl >= 0 ? '+' : '';
+                return `<span class="ticker-item">${it.side === 'BUY' ? '▲' : '▼'} <span class="tick-sym">${it.symbol}</span> ${it.side} <span class="${cls}">${sign}$${it.pnl.toFixed(2)}</span></span>`;
+            }
+            if (it.kind === 'SIGNAL') {
+                return `<span class="ticker-item">⚡ SIGNAL <span class="tick-sym">${it.symbol}</span> ${it.side} · ${it.strategy || ''}</span>`;
+            }
+            return `<span class="ticker-item">🛰 ${it.symbol} ${it.strategy || ''}</span>`;
+        }).join('');
+        const doubled = html + html; // seamless loop (track scrolls -50%)
+        if (tickerTrack.innerHTML !== doubled) tickerTrack.innerHTML = doubled;
+    }
+
+    let lastClosedTickets = new Set();
+    function checkForNewCloses(mt5Data) {
+        if (!mt5Data || !mt5Data.trades) return;
+        const closed = mt5Data.trades.filter((t) => t.exit_price && t.net_pnl !== undefined && t.net_pnl !== 0);
+        if (!closed.length) return;
+        const known = new Set(closed.map((t) => `${t.ticket}:${t.net_pnl}`));
+        // First payload: seed the set, don't toast
+        if (lastClosedTickets.size === 0) {
+            lastClosedTickets = known;
+            return;
+        }
+        closed.forEach((t) => {
+            const sig = `${t.ticket}:${t.net_pnl}`;
+            if (!lastClosedTickets.has(sig)) {
+                showToast(t);
+            }
+        });
+        lastClosedTickets = known;
+    }
+
+    function showToast(t) {
+        if (!toastStack) return;
+        const win = t.net_pnl >= 0;
+        const toast = document.createElement('div');
+        toast.className = `toast ${win ? 'win' : 'loss'}`;
+        toast.innerHTML = `
+            <div class="toast-title"><i class="fa-solid ${win ? 'fa-trophy' : 'fa-skull'}"></i> ${win ? 'TRADE CLOSED · WIN' : 'TRADE CLOSED · LOSS'}</div>
+            <div class="toast-body"><strong>${t.strategy}</strong> ${t.symbol} ${t.type} · <strong class="${win ? 'text-emerald' : 'text-rose'} font-mono">${win ? '+' : ''}$${t.net_pnl.toFixed(2)}</strong> <span class="font-mono">${t.pips >= 0 ? '+' : ''}${t.pips}p</span></div>
+        `;
+        toastStack.appendChild(toast);
+        setTimeout(() => {
+            toast.style.animation = 'toastOut 0.3s forwards';
+            setTimeout(() => toast.remove(), 350);
+        }, 5000);
+    }
+
+    let eqChart = null;
+    function updateEquityChart(rbData, mt5Data) {
+        if (!rbData || !equityCanvas) return;
+        const series = rbData.equity_series || [];
+        if (series.length < 2) return;
+
+        const now = series[series.length - 1];
+        if (equityChartNow) equityChartNow.textContent = `$${now.equity.toLocaleString('en-US', {maximumFractionDigits: 2})}`;
+        if (equityChartStart) equityChartStart.textContent = `$${series[0].equity.toLocaleString('en-US', {maximumFractionDigits: 2})}`;
+
+        const dpr = window.devicePixelRatio || 1;
+        const rect = equityCanvas.getBoundingClientRect();
+        const w = Math.max(rect.width || 600, 300);
+        const h = 220;
+        if (equityCanvas.width !== w * dpr) { equityCanvas.width = w * dpr; equityCanvas.height = h * dpr; }
+        const ctx = equityCanvas.getContext('2d');
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        ctx.clearRect(0, 0, w, h);
+
+        const vals = series.map((s) => s.equity);
+        const min = Math.min(...vals);
+        const max = Math.max(...vals);
+        const pad = 10;
+        const span = (max - min) || 1;
+
+        const px = (i) => pad + (i / (vals.length - 1)) * (w - pad * 2);
+        const py = (v) => pad + (1 - (v - min) / span) * (h - pad * 2);
+
+        // Grid lines
+        ctx.strokeStyle = 'rgba(255,255,255,0.05)';
+        ctx.lineWidth = 1;
+        for (let i = 0; i <= 4; i++) {
+            const y = pad + (i / 4) * (h - pad * 2);
+            ctx.beginPath(); ctx.moveTo(pad, y); ctx.lineTo(w - pad, y); ctx.stroke();
+        }
+
+        // Gradient fill
+        const grad = ctx.createLinearGradient(0, 0, 0, h);
+        grad.addColorStop(0, 'rgba(16,185,129,0.25)');
+        grad.addColorStop(1, 'rgba(16,185,129,0)');
+
+        ctx.beginPath();
+        ctx.moveTo(pad, h - pad);
+        vals.forEach((v, i) => ctx.lineTo(px(i), py(v)));
+        ctx.lineTo(w - pad, h - pad);
+        ctx.closePath();
+        ctx.fillStyle = grad;
+        ctx.fill();
+
+        // Line
+        ctx.beginPath();
+        vals.forEach((v, i) => { if (i === 0) ctx.moveTo(px(i), py(v)); else ctx.lineTo(px(i), py(v)); });
+        ctx.strokeStyle = '#10b981';
+        ctx.lineWidth = 2;
+        ctx.shadowColor = 'rgba(16,185,129,0.5)';
+        ctx.shadowBlur = 8;
+        ctx.stroke();
+        ctx.shadowBlur = 0;
     }
 
     function updateStrategyCards(predictions) {
@@ -154,7 +347,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     </div>
                     <div style="text-align: right;">
                         <span class="meta-label">HISTORICAL WR</span>
-                        <strong class="text-emerald">${st.win_rate}% (PF ${st.profit_factor})</strong>
+                        <strong class="text-emerald">${st.win_rate !== null && st.win_rate !== undefined ? st.win_rate + '% (PF ' + st.profit_factor + ')' : 'NO LIVE DATA'}</strong>
                     </div>
                 </div>
             `;

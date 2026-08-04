@@ -13,6 +13,7 @@ class PositionTracker:
     def __init__(self, execution_guard):
         self.guard = execution_guard
         self.active_positions = {}
+        self.last_active_snapshot = {}
         self.load_state()
 
     def load_state(self):
@@ -32,7 +33,7 @@ class PositionTracker:
         except Exception as e:
             print(f"⚠️ [Tracker] Error saving state.json: {e}")
 
-    def add_position(self, ticket, strategy, pair, side, lot, hold_bars, entry_time_str):
+    def add_position(self, ticket, strategy, pair, side, lot, hold_bars, entry_time_str, entry_price=None):
         self.active_positions[str(ticket)] = {
             "ticket": ticket,
             "strategy": strategy,
@@ -41,9 +42,58 @@ class PositionTracker:
             "lot": lot,
             "hold_bars": hold_bars,
             "bars_held": 0,
-            "entry_time": entry_time_str
+            "entry_time": entry_time_str,
+            "entry_price": entry_price or 0.0,
+            "exit_price": 0.0,
+            "pips": 0.0,
+            "net_pnl": 0.0,
         }
         self.save_state()
+
+    def refresh_live_pnl(self, risk_mgr, bridge):
+        """Update floating PnL + current entry price for all active positions from live ticks.
+        Returns number of positions that are no longer on MT5 (closed/removed)."""
+        if not self.active_positions:
+            return 0
+        symbols = list({p["pair"] for p in self.active_positions.values()})
+        ticks = {}
+        try:
+            ticks = bridge.fetch_ticks(symbols)
+        except Exception as e:
+            print(f"⚠️ [Tracker] refresh_live_pnl tick fetch error: {e}")
+            return 0
+
+        removed = 0
+        for ticket_str, pos in list(self.active_positions.items()):
+            pair = pos["pair"]
+            tick = ticks.get(pair)
+            try:
+                from engine.mt5_bridge import mt5, HAS_MT5_LIB, MT5_LOCK
+                if HAS_MT5_LIB and mt5:
+                    with MT5_LOCK:
+                        posns = mt5.positions_get(ticket=int(pos["ticket"]))
+                    if not posns:
+                        # Position no longer open on MT5 (TP/SL hit externally)
+                        del self.active_positions[ticket_str]
+                        removed += 1
+                        continue
+            except Exception:
+                pass
+
+            if tick and pos["entry_price"]:
+                pos["net_pnl"] = risk_mgr.compute_floating_pnl(
+                    pair, pos["side"], pos["lot"], pos["entry_price"], tick)
+                pip_sz = 0.01 if "JPY" in pair else 0.0001
+                price = tick.get("bid") if pos["side"].upper() == "BUY" else tick.get("ask")
+                if price and pos["entry_price"]:
+                    pos["pips"] = round(
+                        ((price - pos["entry_price"]) if pos["side"].upper() == "BUY"
+                         else (pos["entry_price"] - price)) / pip_sz, 1)
+            # Update telemetry reference so UI sees fresh data
+            self.last_active_snapshot = dict(self.active_positions)
+
+        self.save_state()
+        return removed
 
     def update_bar_hold_timers(self, current_time_str):
         """

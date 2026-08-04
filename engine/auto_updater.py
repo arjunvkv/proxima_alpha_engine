@@ -29,6 +29,9 @@ CRITICAL_FILES = {
     "engine/mt5_bridge.py",
     "engine/tracker.py",
     "engine/evaluator.py",
+    "engine/db.py",
+    "engine/auditor.py",
+    "engine/mt5_server.py",
 }
 
 # Modules that can be hot-reloaded without restart

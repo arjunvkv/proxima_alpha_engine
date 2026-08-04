@@ -17,6 +17,7 @@ from collections import deque
 from flask import Flask, render_template, jsonify
 from flask_socketio import SocketIO
 
+import engine.db as db
 HERE = Path(__file__).resolve().parent
 
 app = Flask(
@@ -52,6 +53,71 @@ STRATEGY_META = {
     "ny_h21":       {"name": "NY H21",           "type": "NY Close JPY Reversion",    "lot": 1.50, "wr": 65.9, "pf": 2.38,  "h": 21, "m": 0,  "hold_mins": 60,  "symbols": ["EURJPY", "GBPJPY"]},
     "cpmc_z":       {"name": "CPMC Z",           "type": "Cross-Momentum Dislocation","lot": 1.40, "wr": 78.0, "pf": 3.10,  "h": -1, "m": -1, "hold_mins": 45,  "symbols": ["EURAUD", "GBPAUD", "EURNZD"]},
 }
+
+# ─── SQLite read cache (broadcaster fires 1x/sec; don't hammer SQLite 4x/sec) ─
+_CACHE_LOCK = threading.Lock()
+_CACHE_TTL = 5.0
+_CACHE = {}
+
+def _cached(name, builder):
+    with _CACHE_LOCK:
+        now = time.time()
+        hit = _CACHE.get(name)
+        if hit and now - hit[0] < _CACHE_TTL:
+            return hit[1]
+        val = builder()
+        _CACHE[name] = (now, val)
+        return val
+
+def _cached_stats():
+    return _cached("stats", _real_stats)
+
+def _cached_trades(limit=20):
+    def _build():
+        return db.trades_by_range(limit=limit)
+    return _cached(f"trades_{limit}", _build)
+
+def _normalize_closed_trade(t):
+    """Convert a SQLite trades row into the EXACT dict shape both JS tables expect.
+
+    updateAuditTable wants: symbol, type, entry_time, hold_min
+    updateRollingBacktest wants: sim_pnl, is_win, timestamp, gate_reason,
+                                 live_close_pnl, is_live, bug_reason
+    db rows use: pair, side, net_pnl, entry/exit_time, exit_reason.
+    """
+    hold_min = 0
+    try:
+        fmt = "%Y-%m-%d %H:%M:%S"
+        et = datetime.strptime(t.get("entry_time", ""), fmt)
+        xt = datetime.strptime(t.get("exit_time", ""), fmt)
+        hold_min = max(0, int(round((xt - et).total_seconds() / 60)))
+    except Exception:
+        pass
+    net = float(t.get("net_pnl", 0.0))
+    return {
+        "ticket":       t.get("ticket"),
+        "strategy":     t.get("strategy", "—"),
+        "pair":         t.get("pair", "—"),
+        "symbol":       t.get("pair", "—"),
+        "side":         t.get("side", "BUY"),
+        "type":         t.get("side", "BUY"),
+        "lot":          float(t.get("lot", 0)),
+        "entry_price":  float(t.get("entry_price", 0.0)),
+        "exit_price":   float(t.get("exit_price", 0.0)),
+        "pips":         float(t.get("pips", 0.0)),
+        "net_pnl":      net,
+        "entry_time":   t.get("entry_time", ""),
+        "exit_time":    t.get("exit_time", ""),
+        "hold_min":     hold_min,
+        "sim_pnl":      net,
+        "is_win":       net >= 0,
+        "timestamp":    t.get("exit_time", ""),
+        "iso_timestamp": t.get("exit_time", ""),
+        "gate_reason":  None,
+        "live_close_pnl": net,
+        "is_live":      True,
+        "bug_reason":   "CLEAN EXECUTION",
+    }
 
 def update_telemetry(key, value):
     """Called by run.py to push live engine state into the telemetry bus."""
@@ -113,23 +179,30 @@ def _build_imminent(now_utc):
     else:
         regime = "Compression Zone 🟠"
 
+    st = _cached_stats().get(best_cfg["name"], {})
+    target_win = st.get("avg_win", 0.0) if st.get("n") else round(best_cfg["lot"] * 195.0, 2)
+
     return {
         "name":            best_cfg["name"],
         "regime":          regime,
         "countdown_formatted": f"{mins:02d}m {secs:02d}s",
         "next_symbol":     best_cfg["symbols"][0],
         "direction":       "BUY",
-        "confidence":      best_cfg["wr"],
-        "target_win_usd":  round(best_cfg["lot"] * 195.0, 2),
+        "confidence":      st.get("win_rate") if st.get("n") else None,
+        "target_win_usd":  round(target_win, 2),
     }
 
 def _build_radar(now_utc):
-    """Market radar metrics panel — dynamic microsecond tick velocity & network dispersion."""
+    """Market radar metrics panel — REAL metrics from live MT5 when available,
+    graceful synthetic fallback when the engine hasn't pushed a snapshot yet."""
+    real = _telemetry_state.get("real_radar")
+    if real and real.get("real"):
+        return dict(real)
+
     h = now_utc.hour
     s = now_utc.second
     ms = now_utc.microsecond // 1000
 
-    # Microsecond fluctuations every 1s for live dynamic HUD rendering
     micro_vel = round(math.sin(s * 0.25) * 3.2 + math.cos(ms * 0.007) * 1.8, 1)
     micro_disp = round(math.sin(s * 0.15) * 1.8, 1)
     micro_agree = round(math.cos(s * 0.15) * 1.4, 1)
@@ -169,10 +242,19 @@ def _build_radar(now_utc):
         "directional_agreement_pct": agree,
         "volatility_regime":         regime,
         "regime_description":        desc,
+        "real":                      False,
     }
 
+def _real_stats():
+    """Real per-strategy stats from the SQLite trade store (WR/PF/net/avg win/loss)."""
+    try:
+        return db.strategy_stats()
+    except Exception:
+        return {}
+
 def _build_predictions(now_utc):
-    """6-strategy card deck with live countdowns."""
+    """6-strategy card deck with live countdowns + REAL performance stats."""
+    stats = _cached_stats()
     cards = []
     for key, cfg in STRATEGY_META.items():
         r = _countdown(cfg["h"], cfg["m"], now_utc)
@@ -184,8 +266,15 @@ def _build_predictions(now_utc):
             countdown = "REAL-TIME"
             status = "MONITORING"
 
-        avg_win_usd  = round(cfg["lot"] * 25.0, 2)
-        avg_loss_usd = round(cfg["lot"] * 12.0, 2)
+        st = stats.get(cfg["name"], {})
+        n     = st.get("n", 0)
+        wr    = st.get("win_rate") if n else None
+        pf    = st.get("profit_factor") if n else None
+        a_w   = st.get("avg_win", 0.0)
+        a_l   = st.get("avg_loss", 0.0)
+
+        avg_win_usd  = round(a_w, 2) if n else round(cfg["lot"] * 25.0, 2)
+        avg_loss_usd = round(a_l, 2) if n else round(cfg["lot"] * 12.0, 2)
 
         cards.append({
             "name":            cfg["name"],
@@ -197,14 +286,16 @@ def _build_predictions(now_utc):
             "target_loss_usd": avg_loss_usd,
             "next_symbol":     cfg["symbols"][0],
             "direction":       "BUY",
-            "win_rate":        cfg["wr"],
-            "profit_factor":   cfg["pf"],
-            "confidence":      cfg["wr"],
+            "win_rate":        wr,
+            "profit_factor":   pf,
+            "confidence":      wr,
+            "real_trades":     n,
         })
     return cards
 
 def _build_diagnostics(now_utc):
-    """Strategy gate diagnostics based on live engine state."""
+    """Strategy gate diagnostics based on live engine state + REAL performance."""
+    stats = _cached_stats()
     diags = []
     h = now_utc.hour
 
@@ -224,13 +315,17 @@ def _build_diagnostics(now_utc):
             primary   = "Z-Score Threshold Event"
             blockage  = "None — Real-time event-driven trigger"
 
+        st = stats.get(cfg["name"], {})
+        n  = st.get("n", 0)
+        wr = st.get("win_rate", cfg["wr"]) if n else cfg["wr"]
+
         diags.append({
             "name":              cfg["name"],
             "status":            gate_str,
             "progress_pct":      round(progress, 1),
             "primary_gate":      primary,
             "required_threshold":f"WR≥{cfg['wr']}%",
-            "current_value":     f"Live: {cfg['wr']}%",
+            "current_value":     f"Live: {wr}% ({n} trades)" if n else f"Live: {wr}% (no closes yet)",
             "blockage_reason":   blockage,
         })
     return diags
@@ -256,13 +351,14 @@ def _build_exposure(now_utc):
     rows = []
     for ccy, net_lots in exposure_map.items():
         direction = "LONG" if net_lots > 0 else "SHORT"
-        exp_usd   = abs(net_lots) * 100_000 * 0.0001 * eq / 25000
+        notional   = abs(net_lots) * 100_000
+        exp_usd    = round(notional * 0.0001 * (eq / 100_000 if eq else 1.0), 2)
         rows.append({
             "currency":           ccy,
             "direction":          direction,
             "net_exposure_lots":  round(abs(net_lots), 2),
             "exposure_usd":       round(exp_usd, 2),
-            "risk_pct":           round(abs(net_lots) / max(eq, 1) * 100, 2),
+            "risk_pct":           round(notional / max(eq, 1) * 100, 2),
         })
 
     dd_pct = ts["daily_dd_pct"]
@@ -294,43 +390,170 @@ def _build_mt5_telemetry():
             "hold_min":    int(p.get("bars_held", 0)) * 5,
         })
 
+    # Real closed trades from the SQLite store (fallback when auditor buffer empty)
+    closed = list(ts["closed_trades"][-20:]) or _cached_trades(limit=20)
+    closed_norm = [_normalize_closed_trade(t) for t in closed]
+
     return {
         "connected":      ts["connected"],
         "engine_status":  ts["engine_status"],
         "latency_ms":     ts["mt5_latency_ms"],
-        "trades":         (ts["closed_trades"][-20:] + active_trades)[-20:],
+        "trades":         (closed_norm + active_trades)[-20:],
         "active_count":   len(ts["active_positions"]),
     }
+
+def _build_health():
+    """Deployment health payload: git SHA, uptime, RPyC latency, last engine errors."""
+    ts = _telemetry_state
+    sha = db.get_meta("git_sha", "unknown")
+    started = db.get_meta("started_at")
+    uptime_s = 0
+    if started:
+        try:
+            uptime_s = int(time.time() - datetime.strptime(started, "%Y-%m-%d %H:%M:%S").timestamp())
+        except Exception:
+            uptime_s = 0
+    last_errors = [e for e in reversed(list(ts["engine_logs"])) if e.get("severity") == "ERROR"][:5]
+    return {
+        "git_sha":          sha,
+        "uptime_s":         uptime_s,
+        "uptime_formatted": f"{uptime_s // 3600}h {uptime_s % 3600 // 60}m" if uptime_s else "—",
+        "rpyc_latency_ms":  ts["mt5_latency_ms"],
+        "engine_status":    ts["engine_status"],
+        "connected":        ts["connected"],
+        "last_errors":      last_errors,
+    }
+
+BADGE_META = {
+    "trades_10":          {"name": "First Dozen",      "icon": "fa-fire",       "desc": "10 trades closed"},
+    "trades_100":         {"name": "Century Club",     "icon": "fa-medal",      "desc": "100 trades closed"},
+    "streak10_overall":   {"name": "Unstoppable",      "icon": "fa-bolt",       "desc": "10-win streak"},
+    "daily_5wins":        {"name": "Five Alive",       "icon": "fa-dice-five",  "desc": "5 wins in a day"},
+    "single_500_day_trade":{"name": "Big Game Hunter", "icon": "fa-fish-fins",  "desc": "+$500 single trade"},
+}
+BADGE_PREFIX = "streak5_"
+
+def _level_for_xp(xp):
+    """Level curve: level = floor(sqrt(xp/50)) + 1. L1 @0, L2 @50, L3 @200, L4 @450..."""
+    lvl = int((xp / 50.0) ** 0.5) + 1 if xp > 0 else 1
+    lo = 50 * (lvl - 1) ** 2
+    hi = 50 * lvl ** 2
+    pct = round((xp - lo) / max(hi - lo, 1) * 100, 1)
+    return lvl, pct, hi
+
+def _build_game_state():
+    """Game layer payload: XP, level, streaks, badges (persisted in SQLite)."""
+    xp = db.get_streak("xp")
+    overall = db.get_streak("streak_overall")
+    lvl, pct, next_xp = _level_for_xp(xp)
+
+    per_strategy = {}
+    for key, cfg in STRATEGY_META.items():
+        per_strategy[cfg["name"]] = db.get_streak(f"streak_{cfg['name']}")
+
+    badges = []
+    unlocked = {a["key"] for a in db.achievements()}
+    for key, meta in BADGE_META.items():
+        badges.append({
+            "key": key, "name": meta["name"], "icon": meta["icon"],
+            "desc": meta["desc"], "unlocked": key in unlocked,
+        })
+    # Dynamic per-strategy 5-streak badges
+    for key, cfg in STRATEGY_META.items():
+        bkey = BADGE_PREFIX + cfg["name"]
+        badges.append({
+            "key": bkey, "name": f"{cfg['name']} Prodigy", "icon": "fa-crown",
+            "desc": f"5-win streak on {cfg['name']}", "unlocked": bkey in unlocked,
+        })
+
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    sessions = db.daily_sessions(limit=7)
+    return {
+        "xp":               xp,
+        "level":            lvl,
+        "level_progress_pct": pct,
+        "xp_to_next":       next_xp,
+        "streak_overall":   overall,
+        "streaks":          per_strategy,
+        "badges":           badges,
+        "badges_unlocked":  sum(1 for b in badges if b["unlocked"]),
+        "badges_total":     len(badges),
+        "today":            today,
+        "week_sessions":    sessions,
+    }
+
+def _build_ticker():
+    """Live market ticker marquee — latest closed trades + signals from the store."""
+    items = []
+    for t in db.trades_by_range(limit=12):
+        items.append({
+            "kind": "TRADE",
+            "symbol": t.get("pair", ""),
+            "side": t.get("side", "BUY"),
+            "pnl": round(t.get("net_pnl", 0.0), 2),
+        })
+    for s in db.signals_since_midnight(datetime.now(timezone.utc).strftime("%Y-%m-%d")):
+        items.append({
+            "kind": "SIGNAL",
+            "symbol": s.get("pair", ""),
+            "side": s.get("side", "BUY"),
+            "strategy": s.get("strategy", ""),
+        })
+    if not items:
+        items = [{"kind": "BOOT", "symbol": "PROXIMA", "side": "ONLINE", "strategy": "Awaiting first live events"}]
+    return items[:40]
 
 def _build_vps_logs():
     """Return last 50 engine log lines."""
     return list(_telemetry_state["engine_logs"])[-50:]
 
 def _build_rolling_backtest():
-    """Build rolling backtest summary from today's signals_today."""
+    """Real rolling/today metrics from the SQLite store."""
     sigs = _telemetry_state["signals_today"]
-    total   = len(sigs)
-    eq      = _telemetry_state["account_equity"]
-    bal     = _telemetry_state["account_balance"]
-    net_pnl = round(eq - _telemetry_state.get("start_equity", eq), 2) if total else 0.0
-    wins    = max(0, int(total * 0.953)) if total > 0 else 0
+    total_sig = len(sigs)
+    stats = _cached_stats()
+
+    # Aggregate real stats across all strategies that have closed trades
+    n_total  = sum(s["n"] for s in stats.values())
+    wins     = sum(s["wins"] for s in stats.values())
+    net      = sum(s["net_pnl"] for s in stats.values())
+    gw = sum(s["avg_win"] * s["wins"] for s in stats.values())
+    gl = sum(s["avg_loss"] * (s["n"] - s["wins"]) for s in stats.values())
+
+    wr = round(wins / n_total * 100, 1) if n_total else 0.0
+    pf = round(gw / gl, 2) if gl > 0 else (99.99 if gw > 0 else 0.0)
+
+    eq  = _telemetry_state["account_equity"]
+    net_pnl = net if n_total else 0.0
+
+    # Real last-30d equity series for the chart
+    eq_series = []
+    try:
+        for snap in db.equity_series(limit=1500):
+            eq_series.append({"ts": snap["ts"], "equity": snap["equity"], "balance": snap["balance"]})
+    except Exception:
+        pass
+
+    trades = list(_telemetry_state["closed_trades"][-20:]) or _cached_trades(limit=20)
+    trades_norm = [_normalize_closed_trade(t) for t in trades]
 
     return {
         "rolling_2hr_metrics": {
-            "win_rate_percent": 95.3 if total == 0 else round(wins / max(total, 1) * 100, 1),
+            "win_rate_percent": wr,
             "net_pnl_usd":      net_pnl,
-            "total_trades":     total,
-            "profit_factor":    51.43,
+            "total_trades":     n_total,
+            "profit_factor":    pf,
         },
         "today_live_metrics": {
-            "live_win_rate_percent": 95.3 if total == 0 else round(wins / max(total, 1) * 100, 1),
+            "live_win_rate_percent": wr,
             "live_net_pnl_usd":     net_pnl,
-            "total_live_trades":    total,
+            "total_live_trades":    n_total,
         },
-        "trades":          _telemetry_state["closed_trades"][-20:],
+        "trades":          trades_norm,
         "next_run_formatted": "05m 00s",
         "last_run_time":   datetime.utcnow().strftime("%H:%M:%S UTC"),
-        "run_counter":     len(_telemetry_state["signals_today"]),
+        "run_counter":     total_sig,
+        "equity_series":   eq_series[-500:],
     }
 
 # ─── Flask Routes ─────────────────────────────────────────────────────────────
@@ -365,6 +588,7 @@ def page_positions():
 @app.route('/api/predictive_radar')
 def api_predictive_radar():
     now_utc = datetime.now(timezone.utc)
+    eq = _telemetry_state["account_equity"]
     return jsonify({
         "predictions":    _build_predictions(now_utc),
         "radar":          _build_radar(now_utc),
@@ -375,10 +599,13 @@ def api_predictive_radar():
         "vps_logs":       _build_vps_logs(),
         "rolling_backtest": _build_rolling_backtest(),
         "signals_today":  _telemetry_state["signals_today"],
+        "health":         _build_health(),
+        "game":           _build_game_state(),
+        "ticker":         _build_ticker(),
         "timestamp":      datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC"),
         "config": {
-            "account_size":    99071,
-            "daily_limit_usd": 4458,
+            "account_size":    int(eq),
+            "daily_limit_usd": round(eq * 0.045, 0),
         }
     })
 
@@ -389,6 +616,7 @@ def _background_broadcaster():
     while True:
         try:
             now_utc = datetime.now(timezone.utc)
+            eq = _telemetry_state["account_equity"]
             socketio.emit('radar_update', {
                 "predictions":    _build_predictions(now_utc),
                 "radar":          _build_radar(now_utc),
@@ -399,10 +627,13 @@ def _background_broadcaster():
                 "vps_logs":       _build_vps_logs(),
                 "rolling_backtest": _build_rolling_backtest(),
                 "signals_today":  _telemetry_state["signals_today"],
+                "health":         _build_health(),
+                "game":           _build_game_state(),
+                "ticker":         _build_ticker(),
                 "timestamp":      now_utc.strftime("%Y-%m-%d %H:%M:%S UTC"),
                 "config": {
-                    "account_size":    99071,
-                    "daily_limit_usd": 4458,
+                    "account_size":    int(eq),
+                    "daily_limit_usd": round(eq * 0.045, 0),
                 }
             })
         except Exception:

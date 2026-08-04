@@ -7,6 +7,7 @@ import os
 import sys
 import time
 import socket
+import threading
 import subprocess
 import pandas as pd
 from datetime import datetime, timezone, timedelta
@@ -14,6 +15,14 @@ from datetime import datetime, timezone, timedelta
 mt5 = None
 HAS_MT5_LIB = False
 rpyc_conn = None
+
+# RPyC / MT5 shared connection is NOT thread-safe. All cross-thread MT5 access
+# (equity sampler, auditor, main loop) must go through this lock.
+MT5_LOCK = threading.RLock()
+
+def locked_mt5_call(fn, *args, **kwargs):
+    with MT5_LOCK:
+        return fn(*args, **kwargs)
 
 def _ensure_wine_mt5_server():
     if sys.platform == 'win32':
@@ -83,7 +92,8 @@ class MT5Bridge:
 
         # RPyC bridge: MT5 already initialized server-side — skip initialize()
         try:
-            account_info = mt5.account_info()
+            with MT5_LOCK:
+                account_info = mt5.account_info()
             if account_info is not None:
                 self.connected = True
                 login = getattr(account_info, 'login', 'Unknown')
@@ -119,10 +129,22 @@ class MT5Bridge:
         print(f"🟢 [MT5Bridge] Connected to MT5 Account #{login} ({company}) | Balance: ${balance:,.2f} | Equity: ${equity:,.2f}")
         return True
 
+    def account_info(self):
+        """Thread-safe account info fetch."""
+        if not HAS_MT5_LIB or mt5 is None:
+            return None
+        try:
+            with MT5_LOCK:
+                return mt5.account_info()
+        except Exception as e:
+            print(f"⚠️ [MT5Bridge] Error fetching account info: {e}")
+            return None
+
     def get_server_utc_time(self):
         if HAS_MT5_LIB and mt5:
             try:
-                tick = mt5.symbol_info_tick("EURUSD")
+                with MT5_LOCK:
+                    tick = mt5.symbol_info_tick("EURUSD")
                 if tick and getattr(tick, 'time', 0) > 0:
                     server_dt = datetime.fromtimestamp(tick.time, tz=timezone.utc)
                     utc_dt = server_dt - self.tz_offset
@@ -139,8 +161,9 @@ class MT5Bridge:
             if rpyc_conn is not None and hasattr(rpyc_conn.root, 'fetch_m5_rates'):
                 rates = rpyc_conn.root.fetch_m5_rates(symbol, count)
             else:
-                mt5.symbol_select(symbol, True)
-                rates = mt5.copy_rates_from_pos(symbol, mt5.TIMEFRAME_M5, 0, count)
+                with MT5_LOCK:
+                    mt5.symbol_select(symbol, True)
+                    rates = mt5.copy_rates_from_pos(symbol, mt5.TIMEFRAME_M5, 0, count)
 
             if rates is None or len(rates) == 0:
                 return None
@@ -152,6 +175,102 @@ class MT5Bridge:
         except Exception as e:
             print(f"⚠️ [MT5Bridge] Error fetching M5 rates for {symbol}: {e}")
             return None
+
+    def fetch_ticks(self, symbols):
+        """Batch-fetch latest ticks for a list of symbols (returns {sym: {bid, ask, last, time}})."""
+        if not HAS_MT5_LIB or mt5 is None:
+            return {}
+        try:
+            if rpyc_conn is not None and hasattr(rpyc_conn.root, 'fetch_ticks'):
+                return rpyc_conn.root.fetch_ticks(list(symbols))
+            out = {}
+            with MT5_LOCK:
+                for sym in symbols:
+                    t = mt5.symbol_info_tick(sym)
+                    if t:
+                        out[sym] = {
+                            'bid': float(getattr(t, 'bid', 0.0)),
+                            'ask': float(getattr(t, 'ask', 0.0)),
+                            'last': float(getattr(t, 'last', 0.0)),
+                            'time': int(getattr(t, 'time', 0)),
+                        }
+            return out
+        except Exception as e:
+            print(f"⚠️ [MT5Bridge] Error fetching ticks: {e}")
+            return {}
+
+    def fetch_tick_velocity(self, symbols, window_sec=1.0):
+        """Real tick velocity: count actual ticks arriving per second across all symbols.
+
+        Samples the highest tick timestamp per symbol, then measures how many
+        fresh ticks arrived during a live window. Requires two polls — on the
+        native path a millisecond-granularity tick counter is approximated via
+        distinct tick timestamps across the window.
+        """
+        if not HAS_MT5_LIB or mt5 is None:
+            return 0.0
+        try:
+            if rpyc_conn is not None and hasattr(rpyc_conn.root, 'fetch_tick_velocity'):
+                return rpyc_conn.root.fetch_tick_velocity(list(symbols), window_sec)
+            # Native MT5: poll symbol_info_tick twice and count fresh tick timestamps.
+            import time as _t
+            def _sample():
+                snap = {}
+                with MT5_LOCK:
+                    for sym in symbols:
+                        t = mt5.symbol_info_tick(sym)
+                        if t:
+                            snap[sym] = int(getattr(t, 'time_msc', getattr(t, 'time', 0) * 1000))
+                return snap
+            a = _sample()
+            _t.sleep(window_sec)
+            b = _sample()
+            fresh = 0
+            for sym in symbols:
+                if sym in b and sym in a and b[sym] > a[sym]:
+                    fresh += 1
+            return round(fresh / window_sec, 1)
+        except Exception as e:
+            print(f"⚠️ [MT5Bridge] Error fetching tick velocity: {e}")
+            return 0.0
+
+    def fetch_history_deals(self, from_time=0, days=30):
+        """Fetch closed deals from MT5 (via RPyC bridge or native)."""
+        if not HAS_MT5_LIB or mt5 is None:
+            return []
+        try:
+            if rpyc_conn is not None and hasattr(rpyc_conn.root, 'fetch_history_deals'):
+                return rpyc_conn.root.fetch_history_deals(from_time, days)
+            import time as _time
+            end = int(_time.time())
+            start = end - days * 86400
+            deals = mt5.history_deals_get(start if from_time == 0 else from_time, end)
+            if deals is None:
+                return []
+            return [
+                {
+                    'ticket': int(getattr(d, 'ticket', 0)),
+                    'order': int(getattr(d, 'order', 0)),
+                    'symbol': d.symbol,
+                    'type': int(getattr(d, 'type', 0)),
+                    'side': 'BUY' if getattr(d, 'type', 0) == 0 else 'SELL',
+                    'entry': int(getattr(d, 'entry', 0)),
+                    'position_id': int(getattr(d, 'position_id', 0)),
+                    'volume': float(getattr(d, 'volume', 0.0)),
+                    'price': float(getattr(d, 'price', 0.0)),
+                    'profit': float(getattr(d, 'profit', 0.0)),
+                    'fee': float(getattr(d, 'fee', 0.0)),
+                    'commission': float(getattr(d, 'commission', 0.0)),
+                    'swap': float(getattr(d, 'swap', 0.0)),
+                    'time': int(getattr(d, 'time', 0)),
+                    'comment': getattr(d, 'comment', ''),
+                    'magic': int(getattr(d, 'magic', 0)),
+                }
+                for d in deals
+            ]
+        except Exception as e:
+            print(f"⚠️ [MT5Bridge] Error fetching history deals: {e}")
+            return []
 
     def fetch_all_universes_df(self, symbols_list, count=300):
         df_dict = {}

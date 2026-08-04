@@ -64,7 +64,7 @@ class ExecutionGuard:
     def execute_market_order(self, symbol, side, lot, magic, comment="", sl_pips=None, tp_pips=None):
         if not HAS_MT5_LIB or mt5 is None:
             print(f"🟢 [SimMode] Simulated Order: {symbol} {side} {lot}L (SL: {sl_pips}p, TP: {tp_pips}p)")
-            return 99999, "SIM_SUCCESS"
+            return 99999, "SIM_SUCCESS", 0.0
 
         spread_ok, reason = self.check_spread_gate(symbol)
         if not spread_ok:
@@ -121,14 +121,14 @@ class ExecutionGuard:
                 sl_str = f" | SL: {sl_price}" if sl_price > 0 else ""
                 tp_str = f" | TP: {tp_price}" if tp_price > 0 else ""
                 print(f"🟢 [ExecutionGuard] Order Executed! Ticket #{ticket} | {symbol} {side} {lot}L @ {exec_price}{sl_str}{tp_str}")
-                return ticket, "SUCCESS"
+                return ticket, "SUCCESS", float(exec_price)
 
             err_code = res.get('retcode') if res else "UNKNOWN"
             err_msg = res.get('comment') if res else ""
             print(f"⚠️ [ExecutionGuard] Attempt {attempt}/{self.max_retries} failed for {symbol}: Code {err_code} ({err_msg}). Retrying in {self.retry_delay_ms}ms...")
             time.sleep(self.retry_delay_ms / 1000.0)
 
-        return None, f"Failed after {self.max_retries} retries"
+        return None, f"Failed after {self.max_retries} retries", 0.0
 
     def hard_exit_position(self, ticket, symbol, side, lot):
         if not HAS_MT5_LIB or mt5 is None:

@@ -23,6 +23,7 @@ wheels/
 
 # Data & Logs
 data/state.json
+data/proxima.db
 *.log
 *.tar
 *.zip
