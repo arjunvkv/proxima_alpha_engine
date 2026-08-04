@@ -191,10 +191,10 @@ def _build_radar():
     if _last_valid_radar:
         return _last_valid_radar
     return {
-        "tick_velocity_per_sec":     3.0,
-        "network_dispersion_pct":    65.0,
-        "directional_agreement_pct": 60.0,
-        "volatility_regime":         "ACTIVE 🟢",
+        "tick_velocity_per_sec":     0.0,
+        "network_dispersion_pct":    50.0,
+        "directional_agreement_pct": 50.0,
+        "volatility_regime":         "COMPRESSION 🟠",
         "regime_description":        "Monitoring Live MT5 Stream",
         "blips":                     [],
         "real":                      True,

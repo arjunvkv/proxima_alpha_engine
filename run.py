@@ -75,16 +75,17 @@ def _build_real_radar(bridge, df_dict):
 
         if len(ret_series) >= 2:
             keys = list(ret_series.keys())
-            n = min(len(ret_series[i]) for i in ret_series)
+            n = min(len(ret_series[k]) for k in keys)
             arr = np.array([ret_series[k][-n:] for k in keys])
-            # Cross-pair correlation matrix (Pearson)
+            # Cross-pair correlation matrix (Pearson) — sanitize NaN for flat periods
             corr = np.corrcoef(arr)
+            corr = np.nan_to_num(corr, nan=0.0)
             mask = ~np.eye(corr.shape[0], dtype=bool)
             mean_abs_corr = float(np.mean(np.abs(corr[mask]))) if corr.shape[0] > 1 else 0.0
-            radar["network_dispersion_pct"] = round((1.0 - mean_abs_corr) * 100, 1)
+            radar["network_dispersion_pct"] = round(float(np.nan_to_num((1.0 - mean_abs_corr) * 100, nan=50.0)), 1)
 
             # Directional agreement = fraction of pairs with same sign on latest return
-            last_returns = arr[:, -1]
+            last_returns = np.nan_to_num(arr[:, -1], nan=0.0)
             pos = int((last_returns > 0).sum())
             neg = int((last_returns < 0).sum())
             radar["directional_agreement_pct"] = round(max(pos, neg) / len(last_returns) * 100, 1)
@@ -94,16 +95,16 @@ def _build_real_radar(bridge, df_dict):
             mags = np.abs(last_returns)
             m_max = float(mags.max()) if mags.size and mags.max() > 0 else 1.0
             for i, sym in enumerate(keys):
-                strength = float(mags[i]) / m_max
+                strength = float(mags[i]) / m_max if m_max > 0 else 0.5
                 angle = (i / len(keys)) * 360.0 - 90.0
                 import math as _m
                 r = 12 + 30 * strength
                 blips.append({
-                    "symbol":  sym,
-                    "x":       round(50 + r * _m.cos(_m.radians(angle)), 1),
-                    "y":       round(50 + r * _m.sin(_m.radians(angle)), 1),
-                    "strength": round(strength, 2),
-                    "dir":     "up" if last_returns[i] > 0 else "down",
+                    "symbol":   sym,
+                    "x":        round(float(np.nan_to_num(50 + r * _m.cos(_m.radians(angle)), nan=50.0)), 1),
+                    "y":        round(float(np.nan_to_num(50 + r * _m.sin(_m.radians(angle)), nan=50.0)), 1),
+                    "strength": round(float(np.nan_to_num(strength, nan=0.5)), 2),
+                    "dir":      "up" if last_returns[i] > 0 else "down",
                 })
     except Exception:
         pass
