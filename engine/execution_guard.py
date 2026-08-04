@@ -1,10 +1,10 @@
 """
 Institutional Execution Guard — Zero-Failure Order Placement & Exit Retry Engine
-Safe cross-platform import guard for Windows & Linux environments.
+Safe cross-platform import guard for Windows & Linux environments (via RPyC bridge).
 """
 
 import time
-from engine.mt5_bridge import mt5, HAS_MT5_LIB
+from engine.mt5_bridge import mt5, HAS_MT5_LIB, rpyc_conn
 
 class ExecutionGuard:
     def __init__(self, max_spread_pips=15.0, max_retries=3, retry_delay_ms=15):
@@ -44,6 +44,20 @@ class ExecutionGuard:
             return False, f"Spread {round(spread_pips, 1)}p > Max {self.max_spread_pips}p"
         return True, "SPREAD_OK"
 
+    def _do_order_send(self, request):
+        if rpyc_conn is not None and hasattr(rpyc_conn.root, 'order_send'):
+            return rpyc_conn.root.order_send(request)
+        else:
+            res = mt5.order_send(request)
+            if res is None:
+                return None
+            return {
+                'retcode': getattr(res, 'retcode', 0),
+                'order': getattr(res, 'order', 0),
+                'price': getattr(res, 'price', 0.0),
+                'comment': getattr(res, 'comment', '')
+            }
+
     def execute_market_order(self, symbol, side, lot, magic, comment=""):
         if not HAS_MT5_LIB or mt5 is None:
             print(f"🟢 [SimMode] Simulated Order: {symbol} {side} {lot}L")
@@ -78,13 +92,16 @@ class ExecutionGuard:
                 "type_filling": filling_mode,
             }
 
-            result = mt5.order_send(request)
-            if result is not None and result.retcode == mt5.TRADE_RETCODE_DONE:
-                print(f"🟢 [ExecutionGuard] Order Executed! Ticket #{result.order} | {symbol} {side} {lot}L @ {result.price}")
-                return result.order, "SUCCESS"
+            res = self._do_order_send(request)
+            if res is not None and res.get('retcode') == 10009:  # 10009 == TRADE_RETCODE_DONE
+                ticket = res.get('order', 0)
+                exec_price = res.get('price', price)
+                print(f"🟢 [ExecutionGuard] Order Executed! Ticket #{ticket} | {symbol} {side} {lot}L @ {exec_price}")
+                return ticket, "SUCCESS"
 
-            err_code = result.retcode if result else "UNKNOWN"
-            print(f"⚠️ [ExecutionGuard] Attempt {attempt}/{self.max_retries} failed for {symbol}: Code {err_code}. Retrying in {self.retry_delay_ms}ms...")
+            err_code = res.get('retcode') if res else "UNKNOWN"
+            err_msg = res.get('comment') if res else ""
+            print(f"⚠️ [ExecutionGuard] Attempt {attempt}/{self.max_retries} failed for {symbol}: Code {err_code} ({err_msg}). Retrying in {self.retry_delay_ms}ms...")
             time.sleep(self.retry_delay_ms / 1000.0)
 
         return None, f"Failed after {self.max_retries} retries"
@@ -98,7 +115,7 @@ class ExecutionGuard:
         close_type = mt5.ORDER_TYPE_SELL if side.upper() == "BUY" else mt5.ORDER_TYPE_BUY
 
         for attempt in range(1, 5):
-            positions = mt5.positions_get(ticket=ticket)
+            positions = mt5.positions_get(ticket=int(ticket))
             if not positions:
                 print(f"🟢 [ExecutionGuard] Position #{ticket} confirmed 100% closed!")
                 return True
@@ -118,10 +135,10 @@ class ExecutionGuard:
                 "type_filling": filling_mode,
             }
 
-            result = mt5.order_send(request)
+            self._do_order_send(request)
             time.sleep(0.1)
 
-            positions_after = mt5.positions_get(ticket=ticket)
+            positions_after = mt5.positions_get(ticket=int(ticket))
             if not positions_after:
                 print(f"🟢 [ExecutionGuard] Exit Executed & Confirmed! Ticket #{ticket} closed @ {price}")
                 return True

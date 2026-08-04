@@ -53,6 +53,27 @@ class MT5Service(rpyc.Service):
             for r in rates
         ]
 
+    def exposed_order_send(self, request_dict):
+        # Unpack RPyC netref dict into native local Wine Python dict
+        native_req = {k: v for k, v in request_dict.items()}
+        res = mt5.order_send(native_req)
+        if res is None:
+            print(f"[MT5 RPyC Server] order_send returned None. Last error: {mt5.last_error()}")
+            return None
+        # Convert OrderResult namedtuple to dict for clean RPyC return
+        return {
+            'retcode': res.retcode,
+            'deal': res.deal,
+            'order': res.order,
+            'volume': res.volume,
+            'price': res.price,
+            'bid': res.bid,
+            'ask': res.ask,
+            'comment': res.comment,
+            'request_id': res.request_id,
+            'retcode_external': res.retcode_external
+        }
+
 if __name__ == '__main__':
     print("[MT5 RPyC Server] Starting bridge server on port 18812...")
     server = ThreadedServer(
