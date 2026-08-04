@@ -166,6 +166,10 @@ def main():
         lock.release()
         return
 
+    # ✅ Mark dashboard as LIVE immediately after successful MT5 connection
+    update_telemetry("engine_status", "LIVE")
+    update_telemetry("connected", True)
+
     # 3.5 Start Trade Auditor (real closed-trade reconciliation + game state)
     auditor = TradeAuditor(bridge=bridge, check_interval_sec=30, days=30)
     auditor.start()
@@ -236,6 +240,9 @@ def main():
                     update_telemetry("mt5_latency_ms", measured_account.latency_ms)
 
                     if acc_info:
+                        # Keep dashboard status green as long as MT5 is responding
+                        update_telemetry("connected", True)
+                        update_telemetry("engine_status", "LIVE")
                         risk_mgr.update_daily_baseline(acc_info.equity)
                         update_telemetry("account_equity", acc_info.equity)
                         update_telemetry("account_balance", acc_info.balance)
@@ -319,11 +326,13 @@ def main():
 
             # Continuous 1-second tick velocity & real-time animated market radar update
             try:
+                update_telemetry("connected", True)
+                update_telemetry("engine_status", "LIVE")
                 last_radar_snapshot = _build_real_radar(bridge)
                 if last_radar_snapshot:
                     update_telemetry("real_radar", last_radar_snapshot)
             except Exception as e:
-                pass
+                print(f"⚠️ [Radar Loop Exception] {e}")
 
             time.sleep(1)
 

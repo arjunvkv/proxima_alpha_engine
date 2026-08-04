@@ -105,8 +105,14 @@ class MT5Bridge:
 
         # RPyC bridge: MT5 already initialized server-side — skip initialize()
         try:
-            with MT5_LOCK:
-                account_info = mt5.account_info()
+            account_info = None
+            for attempt in range(3):
+                with MT5_LOCK:
+                    account_info = mt5.account_info()
+                if account_info is not None:
+                    break
+                time.sleep(0.5)
+
             if account_info is not None:
                 self.connected = True
                 login = getattr(account_info, 'login', 'Unknown')
@@ -116,7 +122,7 @@ class MT5Bridge:
                 print(f"🟢 [MT5Bridge] Connected to MT5 Account #{login} ({company}) | Balance: ${balance:,.2f} | Equity: ${equity:,.2f}")
                 return True
             else:
-                print("⚠️ [MT5Bridge] account_info() returned None — MT5 terminal may not be logged in.")
+                print("⚠️ [MT5Bridge] account_info() returned None after 3 retries — MT5 terminal may not be logged in.")
         except Exception as e:
             print(f"⚠️ [MT5Bridge] account_info() probe failed: {e}")
 
