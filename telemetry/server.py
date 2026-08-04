@@ -25,6 +25,7 @@ app = Flask(
     static_folder=str(HERE / "static")
 )
 app.config['SECRET_KEY'] = 'proxima_alpha_2026'
+app.config['SEND_FILE_MAX_AGE_DEFAULT'] = 0  # No browser caching — always fresh CSS/JS
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
 
 # ─── Shared Live State (written by run.py, read by broadcaster) ──────────────
