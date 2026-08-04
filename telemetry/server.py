@@ -406,24 +406,21 @@ def _background_broadcaster():
 
 # ─── Public Entry Point (called by run.py) ────────────────────────────────────
 
+from werkzeug.serving import make_server
+
 def start_telemetry_server(port=8888):
     """Start the Gaming UI server on a non-blocking daemon thread. No MT5 imports."""
     threading.Thread(target=_background_broadcaster, daemon=True).start()
 
     def _serve():
-        for p in range(port, port + 5):
+        for p in range(port, port + 10):
             try:
+                server = make_server('0.0.0.0', p, app, threaded=True)
                 print(f"🟢 [Telemetry] Obsidian Gaming UI → http://0.0.0.0:{p}")
-                app.run(
-                    host='0.0.0.0',
-                    port=p,
-                    debug=False,
-                    use_reloader=False,
-                    threaded=True
-                )
+                server.serve_forever()
                 break
-            except OSError:
-                print(f"⚠️ [Telemetry] Port {p} busy, trying {p+1}...")
+            except Exception as e:
+                print(f"⚠️ [Telemetry] Port {p} unavailable ({e}), trying {p+1}...")
                 continue
 
     threading.Thread(target=_serve, daemon=True).start()
