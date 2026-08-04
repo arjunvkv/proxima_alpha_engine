@@ -181,7 +181,9 @@ class MT5Bridge:
         try:
             if rpyc_conn is not None and hasattr(rpyc_conn.root, 'fetch_m5_rates'):
                 with MT5_LOCK:
-                    rates = rpyc_conn.root.fetch_m5_rates(symbol, count)
+                    raw_rates = rpyc_conn.root.fetch_m5_rates(symbol, count)
+                    import rpyc
+                    rates = rpyc.classic.obtain(raw_rates)
             else:
                 with MT5_LOCK:
                     mt5.symbol_select(symbol, True)
@@ -215,7 +217,9 @@ class MT5Bridge:
         try:
             if rpyc_conn is not None and hasattr(rpyc_conn.root, 'fetch_ticks'):
                 with MT5_LOCK:
-                    return rpyc_conn.root.fetch_ticks(list(symbols))
+                    raw = rpyc_conn.root.fetch_ticks(list(symbols))
+                    import rpyc
+                    return rpyc.classic.obtain(raw)
             out = {}
             with MT5_LOCK:
                 for sym in symbols:
