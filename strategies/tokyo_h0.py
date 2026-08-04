@@ -1,6 +1,7 @@
 """
 Tokyo H0 Strategy Engine — 18-Pair Asian Open Reversion (95.3% Proven WR)
 Evaluates relative 30m return declines across 18 FX pairs at 00:00 UTC and picks top 3 pairs to buy.
+# Live Auto-Puller Verification Tag: v1.0.1 - Tested Live
 """
 
 import pandas as pd
@@ -35,7 +36,6 @@ def evaluate_tokyo_h0(df_dict, timestamp, config):
     if len(returns) < top_n:
         return []
 
-    # Sort pairs by largest negative return (most declined)
     returns.sort(key=lambda x: x[1])
     selected_pairs = [pair for pair, ret in returns[:top_n]]
 
