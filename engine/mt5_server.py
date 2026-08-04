@@ -15,7 +15,7 @@ class MT5Service(rpyc.Service):
         return mt5
 
 if __name__ == '__main__':
-    print("🟢 [MT5 RPyC Server] Starting MT5 bridge server on port 18812...")
+    print("[MT5 RPyC Server] Starting MT5 bridge server on port 18812...")
     server = ThreadedServer(
         MT5Service,
         port=18812,

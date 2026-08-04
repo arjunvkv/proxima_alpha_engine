@@ -26,7 +26,7 @@ def _ensure_wine_mt5_server():
             print("🚀 [MT5Bridge] Launching MT5 RPyC Bridge Server under Wine...")
             repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
             server_script = os.path.join(repo_root, "engine", "mt5_server.py")
-            cmd = f"DISPLAY=:10 WINEDEBUG=-all nohup wine ~/.wine/drive_c/Python310/python.exe {server_script} > /tmp/mt5_server.log 2>&1 &"
+            cmd = f"PYTHONIOENCODING=utf-8 DISPLAY=:10 WINEDEBUG=-all nohup wine ~/.wine/drive_c/Python310/python.exe {server_script} > /tmp/mt5_server.log 2>&1 &"
             subprocess.Popen(cmd, shell=True)
             time.sleep(3)
     except Exception as e:
