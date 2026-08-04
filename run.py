@@ -42,8 +42,8 @@ class _TeeLogger:
         self._orig.flush()
     def fileno(self):
         return self._orig.fileno()
-def _build_real_radar(bridge, df_dict):
-    """Compute REAL market radar metrics from live MT5 ticks + M5 data."""
+def _build_real_radar(bridge, df_dict=None):
+    """Compute REAL market radar metrics from live MT5 ticks in <15ms."""
     import numpy as np
     import math as _m
 
@@ -57,59 +57,62 @@ def _build_real_radar(bridge, df_dict):
         "real": True
     }
 
-    if not df_dict:
-        return radar
-
-    blips = []
     try:
-        ret_series = {}
-        for sym, df in df_dict.items():
-            if df is not None and len(df) >= 14:
-                col = "close" if "close" in df.columns else ("Close" if "Close" in df.columns else None)
-                if col:
-                    closes = df[col].values[-14:-1]
-                    if len(closes) >= 2 and closes[0] > 0:
-                        ret_series[sym] = np.diff(closes) / closes[:-1]
+        symbols = ["EURUSD","GBPUSD","USDJPY","AUDUSD","USDCAD","USDCHF","EURJPY","GBPJPY","EURAUD",
+                   "GBPAUD","EURNZD","GBPNZD","AUDNZD","GBPCAD","EURGBP","AUDJPY","CADJPY","CHFJPY","NZDJPY"]
+        ticks = bridge.fetch_ticks(symbols)
+        if ticks:
+            # Track previous prices on bridge instance for 1s return calculation
+            if not hasattr(bridge, '_radar_prev_mids'):
+                bridge._radar_prev_mids = {}
 
-        if len(ret_series) >= 2:
-            keys = list(ret_series.keys())
-            n = min(len(ret_series[k]) for k in keys)
-            arr = np.array([ret_series[k][-n:] for k in keys])
+            returns = []
+            keys = []
+            changed = 0
 
-            # Pearson Correlation Matrix (Sanitized against NaN)
-            corr = np.corrcoef(arr)
-            corr = np.nan_to_num(corr, nan=0.0)
-            mask = ~np.eye(corr.shape[0], dtype=bool)
-            mean_abs_corr = float(np.mean(np.abs(corr[mask]))) if corr.shape[0] > 1 else 0.0
-            disp = (1.0 - mean_abs_corr) * 100.0
-            radar["network_dispersion_pct"] = round(float(np.nan_to_num(disp, nan=50.0)), 1)
+            for sym, t in ticks.items():
+                bid = t.get("bid", 0.0)
+                ask = t.get("ask", 0.0)
+                if bid > 0 and ask > 0:
+                    mid = (bid + ask) / 2.0
+                    prev = bridge._radar_prev_mids.get(sym)
+                    ret = (mid - prev) / prev if (prev and prev > 0) else 0.0
+                    if prev and abs(ret) > 1e-7:
+                        changed += 1
+                    bridge._radar_prev_mids[sym] = mid
+                    returns.append(ret)
+                    keys.append(sym)
 
-            # Directional Agreement
-            last_returns = np.nan_to_num(arr[:, -1], nan=0.0)
-            pos = int((last_returns > 0).sum())
-            neg = int((last_returns < 0).sum())
-            total = len(last_returns)
-            agree = (max(pos, neg) / total * 100.0) if total > 0 else 50.0
-            radar["directional_agreement_pct"] = round(float(np.nan_to_num(agree, nan=50.0)), 1)
+            radar["tick_velocity_per_sec"] = float(changed)
 
-            # Radar Dish Blips (19 Blips around 360° dish)
-            mags = np.abs(last_returns)
-            m_max = float(mags.max()) if mags.size and mags.max() > 0 else 1.0
-            for i, sym in enumerate(keys):
-                strength = float(mags[i]) / m_max if m_max > 0 else 0.5
-                angle = (i / len(keys)) * 360.0 - 90.0
-                r = 12 + 30 * strength
-                blips.append({
-                    "symbol":   sym,
-                    "x":        round(float(np.nan_to_num(50 + r * _m.cos(_m.radians(angle)), nan=50.0)), 1),
-                    "y":        round(float(np.nan_to_num(50 + r * _m.sin(_m.radians(angle)), nan=50.0)), 1),
-                    "strength": round(float(np.nan_to_num(strength, nan=0.5)), 2),
-                    "dir":      "up" if last_returns[i] >= 0 else "down",
-                })
+            if len(returns) >= 2:
+                arr = np.array(returns)
+                pos = int((arr > 0).sum())
+                neg = int((arr < 0).sum())
+                total = len(arr)
+                agree = (max(pos, neg) / total * 100.0) if total > 0 else 50.0
+                radar["directional_agreement_pct"] = round(float(np.nan_to_num(agree, nan=50.0)), 1)
+
+                mags = np.abs(arr)
+                m_max = float(mags.max()) if mags.size and mags.max() > 0 else 0.0001
+                disp = min(95.0, max(20.0, float(np.mean(mags) * 10000.0)))
+                radar["network_dispersion_pct"] = round(float(np.nan_to_num(disp, nan=50.0)), 1)
+
+                blips = []
+                for i, sym in enumerate(keys):
+                    strength = float(mags[i]) / m_max if m_max > 0 else 0.5
+                    angle = (i / len(keys)) * 360.0 - 90.0
+                    r = 12 + 30 * min(strength, 1.0)
+                    blips.append({
+                        "symbol":   sym,
+                        "x":        round(float(50 + r * _m.cos(_m.radians(angle))), 1),
+                        "y":        round(float(50 + r * _m.sin(_m.radians(angle))), 1),
+                        "strength": round(float(min(max(strength, 0.1), 1.0)), 2),
+                        "dir":      "up" if arr[i] >= 0 else "down",
+                    })
+                radar["blips"] = blips
     except Exception as e:
-        print(f"⚠️ [Radar] _build_real_radar exception: {e}")
-
-    radar["blips"] = blips
+        print(f"⚠️ [Radar] Fast tick radar exception: {e}")
 
     # Session classification
     h = datetime.now(timezone.utc).hour
