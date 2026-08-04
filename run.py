@@ -177,11 +177,6 @@ def main():
         all_symbols.update(strat["universe"])
     all_symbols = sorted(all_symbols)
 
-    print(f"🟢 [Engine] Monitoring {len(all_symbols)} Symbols across 6 Active Strategies...")
-    update_telemetry("engine_status", "ONLINE")
-    update_telemetry("connected", HAS_MT5_LIB)
-    print("=" * 115)
-
     last_eval_time = None
     last_radar_snapshot = None
     start_day_key = datetime.now(timezone.utc).strftime("%Y-%m-%d")
@@ -200,6 +195,15 @@ def main():
             time.sleep(5)
 
     threading.Thread(target=_equity_sampler, daemon=True).start()
+
+    # Initialize initial radar snapshot immediately on startup
+    try:
+        init_df = bridge.fetch_all_universes_df(list(all_symbols), count=300, exclude_forming=True)
+        last_radar_snapshot = _build_real_radar(bridge, init_df)
+        if last_radar_snapshot:
+            update_telemetry("real_radar", last_radar_snapshot)
+    except Exception as e:
+        print(f"⚠️ [Engine] Startup radar init exception: {e}")
 
     try:
         while True:
