@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PROXIMA ALPHA ENGINE — Risk & PnL</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/obsidian_terminal.css') }}">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.min.js"></script>
+</head>
+<body class="obsidian-theme">
+
+    <header class="top-nav">
+        <div class="brand-block">
+            <div class="logo-pulse"><i class="fa-solid fa-atom"></i></div>
+            <div class="brand-text">
+                <span class="brand-name">PROXIMA ALPHA ENGINE</span>
+                <span class="brand-sub">LIVE PYTHON EXECUTION TERMINAL</span>
+            </div>
+        </div>
+        <nav class="nav-links">
+            <a href="/" class="nav-item"><i class="fa-solid fa-chart-line"></i> Overview</a>
+            <a href="/trades" class="nav-item"><i class="fa-solid fa-list-check"></i> Trades</a>
+            <a href="/risk" class="nav-item active"><i class="fa-solid fa-shield-halved"></i> Risk & PnL</a>
+            <a href="/logs" class="nav-item"><i class="fa-solid fa-terminal"></i> Engine Logs</a>
+        </nav>
+        <div class="server-telemetry">
+            <div class="status-indicator online" id="serverStatusDot"></div>
+            <span class="status-text" id="serverStatusText">LIVE STREAMING</span>
+            <span class="timestamp-clock" id="liveClock">00:00:00 UTC</span>
+        </div>
+    </header>
+
+    <main class="dashboard-container">
+        <div class="section-title-bar" style="margin-bottom:16px;">
+            <h3><i class="fa-solid fa-shield-halved text-emerald"></i> RISK MANAGEMENT & DAILY PNL</h3>
+            <span class="subtitle">Real values from live MT5 telemetry + the trade store</span>
+        </div>
+
+        <!-- HERO METRICS ROW -->
+        <div style="display:grid; grid-template-columns:repeat(4,1fr); gap:14px; margin-bottom:20px;">
+            <div class="radar-card" style="text-align:center;">
+                <div class="card-header"><i class="fa-solid fa-coins text-emerald"></i><span>DAILY PNL</span></div>
+                <div class="metric-body"><span class="metric-value text-emerald" id="dailyPnl">—</span></div>
+                <div class="metric-subtext">Since midnight UTC</div>
+            </div>
+            <div class="radar-card" style="text-align:center;">
+                <div class="card-header"><i class="fa-solid fa-arrow-trend-down text-rose"></i><span>DRAWDOWN %</span></div>
+                <div class="metric-body"><span class="metric-value text-rose" id="ddPct">—</span></div>
+                <div class="metric-subtext" id="ddLimitLabel">Limit: 4.5%</div>
+            </div>
+            <div class="radar-card" style="text-align:center;">
+                <div class="card-header"><i class="fa-solid fa-scale-balanced text-cyan"></i><span>EQUITY</span></div>
+                <div class="metric-body"><span class="metric-value" id="equity">—</span></div>
+                <div class="metric-subtext" id="balance">Balance: —</div>
+            </div>
+            <div class="radar-card" style="text-align:center;">
+                <div class="card-header"><i class="fa-solid fa-shield-halved text-emerald"></i><span>DD SHIELD</span></div>
+                <div class="metric-body"><span class="metric-value-sm text-emerald" id="shieldStatus">—</span></div>
+                <div class="metric-subtext">New entries allowed</div>
+            </div>
+        </div>
+
+        <!-- DD SHIELD BAR -->
+        <div style="background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.07); border-radius:10px; padding:20px; margin-bottom:20px;">
+            <div style="display:flex; justify-content:space-between; margin-bottom:10px; font-size:0.8rem;">
+                <span style="color:var(--text-muted);">DAILY DRAWDOWN METER</span>
+                <span style="font-family:var(--font-mono); color:var(--text-primary);" id="ddMeterLabel">— / 4.50%</span>
+            </div>
+            <div style="background:rgba(0,0,0,0.4); border-radius:6px; height:16px; overflow:hidden;">
+                <div id="ddBar" style="height:100%; width:0%; background:linear-gradient(90deg,var(--accent-emerald),var(--accent-amber)); border-radius:6px; transition:width 0.5s;"></div>
+            </div>
+            <div style="display:flex; justify-content:space-between; margin-top:6px; font-size:0.7rem; color:var(--text-muted);">
+                <span>0%</span><span style="color:var(--accent-amber);">⚠ 3.0%</span><span style="color:var(--accent-rose);">🛑 4.5% HALT</span>
+            </div>
+        </div>
+
+        <!-- PERFORMANCE -->
+        <div class="section-title-bar" style="margin-bottom:12px;">
+            <h3><i class="fa-solid fa-chart-line text-emerald"></i> REAL PERFORMANCE</h3>
+            <span class="subtitle">Aggregates computed from closed trades in the SQLite store</span>
+        </div>
+        <div style="display:grid; grid-template-columns:repeat(4,1fr); gap:14px; margin-bottom:20px;">
+            <div class="radar-card" style="text-align:center;">
+                <div class="card-header"><i class="fa-solid fa-bolt text-amber"></i><span>TODAY WR</span></div>
+                <div class="metric-body"><span class="metric-value text-amber" id="todayWr">—</span></div>
+                <div class="metric-subtext" id="todayTrades">0 closed today</div>
+            </div>
+            <div class="radar-card" style="text-align:center;">
+                <div class="card-header"><i class="fa-solid fa-coins text-emerald"></i><span>TODAY PNL</span></div>
+                <div class="metric-body"><span class="metric-value text-emerald" id="todayPnl">—</span></div>
+                <div class="metric-subtext">Closed-trade PnL today</div>
+            </div>
+            <div class="radar-card" style="text-align:center;">
+                <div class="card-header"><i class="fa-solid fa-bolt text-purple"></i><span>ALL-TIME WR</span></div>
+                <div class="metric-body"><span class="metric-value text-purple" id="allTimeWr">—</span></div>
+                <div class="metric-subtext" id="allTimeTrades">0 total trades</div>
+            </div>
+            <div class="radar-card" style="text-align:center;">
+                <div class="card-header"><i class="fa-solid fa-chart-bar text-cyan"></i><span>ALL-TIME PF</span></div>
+                <div class="metric-body"><span class="metric-value text-cyan" id="allTimePf">—</span></div>
+                <div class="metric-subtext" id="allTimePnl">Net $0.00</div>
+            </div>
+        </div>
+
+        <!-- CURRENCY EXPOSURE TABLE -->
+        <div class="section-title-bar" style="margin-bottom:12px;">
+            <h3><i class="fa-solid fa-layer-group"></i> CURRENCY EXPOSURE BREAKDOWN</h3>
+        </div>
+        <div class="table-scroll-wrapper">
+            <table class="audit-table">
+                <thead>
+                    <tr>
+                        <th>Currency</th>
+                        <th>Net Direction</th>
+                        <th>Net Lots</th>
+                        <th>Exposure USD</th>
+                        <th>Risk %</th>
+                    </tr>
+                </thead>
+                <tbody id="exposureTableBody">
+                    <tr><td colspan="5" style="text-align:center;color:var(--text-muted);padding:20px;">No open positions</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </main>
+
+    <script>
+    const socket = io();
+    const liveClock = document.getElementById('liveClock');
+    const serverStatusDot = document.getElementById('serverStatusDot');
+    const serverStatusText = document.getElementById('serverStatusText');
+    setInterval(() => { if (liveClock) liveClock.textContent = new Date().toISOString().substring(11, 19) + ' UTC'; }, 1000);
+    socket.on('connect', () => { serverStatusDot.className='status-indicator online'; serverStatusText.textContent='LIVE STREAMING'; });
+    socket.on('disconnect', () => { serverStatusDot.className='status-indicator offline'; serverStatusText.textContent='DISCONNECTED'; });
+
+    function fmtMoney(v, digits) {
+        if (v === null || v === undefined) return '—';
+        return '$' + v.toLocaleString('en-US', { minimumFractionDigits: digits || 2, maximumFractionDigits: digits || 2 });
+    }
+    function fmtPct(v) {
+        if (v === null || v === undefined) return '—';
+        return v.toFixed(2) + '%';
+    }
+
+    socket.on('radar_update', (data) => {
+        const risk = data.risk || {};
+        const perf = data.performance || {};
+        const today = perf.today || {};
+        const allTime = perf.all_time || {};
+
+        // Risk cards
+        const pnl = risk.daily_pnl;
+        document.getElementById('dailyPnl').textContent = pnl !== null && pnl !== undefined ? (pnl >= 0 ? '+' : '') + fmtMoney(Math.abs(pnl), 2) : '—';
+        document.getElementById('dailyPnl').className = 'metric-value ' + (pnl >= 0 ? 'text-emerald' : 'text-rose');
+        document.getElementById('ddPct').textContent = fmtPct(risk.daily_dd_pct);
+        document.getElementById('ddLimitLabel').textContent = `Limit: ${fmtPct(risk.daily_limit_pct)}`;
+        document.getElementById('equity').textContent = fmtMoney(risk.equity, 0);
+        document.getElementById('balance').textContent = `Balance: ${fmtMoney(risk.balance, 0)}`;
+
+        const dd = risk.daily_dd_pct || 0;
+        const limit = risk.daily_limit_pct || 4.5;
+        document.getElementById('ddMeterLabel').textContent = `${dd.toFixed(2)}% / ${limit.toFixed(2)}%`;
+        const pctBar = Math.min(dd / limit * 100, 100);
+        document.getElementById('ddBar').style.width = pctBar + '%';
+        document.getElementById('ddBar').style.background = pctBar > 80 ? 'var(--accent-rose)' : pctBar > 60 ? 'var(--accent-amber)' : 'var(--accent-emerald)';
+
+        const shield = risk.shield_active;
+        document.getElementById('shieldStatus').textContent = shield === true ? '✅ ACTIVE' : shield === false ? '🛑 HALTED' : '—';
+        document.getElementById('shieldStatus').className = 'metric-value-sm ' + (shield ? 'text-emerald' : 'text-rose');
+
+        // Performance cards
+        document.getElementById('todayWr').textContent = today.win_rate_percent !== undefined ? today.win_rate_percent + '%' : '—';
+        document.getElementById('todayTrades').textContent = `${today.total_trades || 0} closed today`;
+        const tp = today.net_pnl_usd;
+        document.getElementById('todayPnl').textContent = tp !== undefined ? (tp >= 0 ? '+' : '') + fmtMoney(Math.abs(tp), 2) : '—';
+        document.getElementById('todayPnl').className = 'metric-value ' + (tp >= 0 ? 'text-emerald' : 'text-rose');
+        document.getElementById('allTimeWr').textContent = allTime.win_rate_percent !== undefined ? allTime.win_rate_percent + '%' : '—';
+        document.getElementById('allTimeTrades').textContent = `${allTime.total_trades || 0} total trades`;
+        document.getElementById('allTimePf').textContent = allTime.profit_factor !== undefined ? allTime.profit_factor : '—';
+        const ap = allTime.net_pnl_usd;
+        document.getElementById('allTimePnl').textContent = `Net ${ap !== undefined ? (ap >= 0 ? '+' : '') + fmtMoney(Math.abs(ap), 2) : '—'}`;
+
+        // Exposure table
+        const exp = data.exposure || [];
+        const tbody = document.getElementById('exposureTableBody');
+        tbody.innerHTML = '';
+        if (!exp.length) {
+            tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--text-muted);padding:20px;">No open positions</td></tr>';
+        } else {
+            exp.forEach(r => {
+                const isLong = r.direction === 'LONG';
+                tbody.innerHTML += `
+                    <tr>
+                        <td><strong>${r.currency}</strong></td>
+                        <td><span class="dir-badge ${isLong ? 'buy' : 'sell'}">${isLong ? 'NET LONG' : 'NET SHORT'}</span></td>
+                        <td><span class="font-mono">${(r.net_exposure_lots||0).toFixed(2)} Lots</span></td>
+                        <td><span class="font-mono">${fmtMoney(r.exposure_usd, 2)}</span></td>
+                        <td><span class="font-mono ${r.risk_pct > 3 ? 'text-rose' : 'text-emerald'}">${(r.risk_pct||0).toFixed(2)}%</span></td>
+                    </tr>`;
+            });
+        }
+    });
+    </script>
+</body>
+</html>

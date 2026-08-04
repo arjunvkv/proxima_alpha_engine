@@ -6,7 +6,6 @@ Zero performance impact — decoupled daemon thread, no MT5 imports here.
 """
 
 import time
-import math
 import threading
 import json
 import os
@@ -37,21 +36,21 @@ _telemetry_state = {
     "daily_pnl":        0.0,
     "daily_dd_pct":     0.0,
     "shield_ok":        True,
-    "engine_status":    "ONLINE",
+    "engine_status":    "OFFLINE",
     "connected":        False,
-    "mt5_latency_ms":   15,
-    "account_equity":   99071.52,
-    "account_balance":  99071.52,
+    "mt5_latency_ms":   None,
+    "account_equity":   0.0,
+    "account_balance":  0.0,
     "engine_logs":      deque(maxlen=200),  # raw log lines from engine
 }
 
 STRATEGY_META = {
-    "tokyo_h0":     {"name": "Tokyo H0",       "type": "Asian Midnight Reversion",   "lot": 1.00, "wr": 95.3, "pf": 51.43, "h": 0,  "m": 0,  "hold_mins": 60,  "symbols": ["EURJPY", "USDJPY", "GBPJPY"]},
-    "ultra_monster":{"name": "Ultra Monster",  "type": "Volatility Dislocation",     "lot": 1.20, "wr": 76.0, "pf": 5.20,  "h": -1, "m": -1, "hold_mins": 15,  "symbols": ["EURAUD", "GBPAUD"]},
-    "cppf_z":       {"name": "CPPF Z",          "type": "Cross-Pair Z≥6 Reversion",   "lot": 1.40, "wr": 85.0, "pf": 5.23,  "h": -1, "m": -1, "hold_mins": 90,  "symbols": ["EURAUD", "GBPAUD"]},
-    "msv_asian":    {"name": "MSV Asian",       "type": "FX Exhaustion Gate",         "lot": 1.00, "wr": 88.0, "pf": 4.90,  "h": 0,  "m": 30, "hold_mins": 60,  "symbols": ["EURJPY", "GBPJPY"]},
-    "ny_h21":       {"name": "NY H21",           "type": "NY Close JPY Reversion",    "lot": 1.50, "wr": 65.9, "pf": 2.38,  "h": 21, "m": 0,  "hold_mins": 60,  "symbols": ["EURJPY", "GBPJPY"]},
-    "cpmc_z":       {"name": "CPMC Z",           "type": "Cross-Momentum Dislocation","lot": 1.40, "wr": 78.0, "pf": 3.10,  "h": -1, "m": -1, "hold_mins": 45,  "symbols": ["EURAUD", "GBPAUD", "EURNZD"]},
+    "tokyo_h0":     {"name": "Tokyo H0",       "type": "Asian Midnight Reversion",   "lot": 1.00, "h": 0,  "m": 0,  "hold_mins": 60,  "symbols": ["EURJPY", "USDJPY", "GBPJPY"]},
+    "ultra_monster":{"name": "Ultra Monster",  "type": "Volatility Dislocation",     "lot": 1.20, "h": -1, "m": -1, "hold_mins": 15,  "symbols": ["EURAUD", "GBPAUD"]},
+    "cppf_z":       {"name": "CPPF Z",          "type": "Cross-Pair Z≥6 Reversion",   "lot": 1.40, "h": -1, "m": -1, "hold_mins": 90,  "symbols": ["EURAUD", "GBPAUD"]},
+    "msv_asian":    {"name": "MSV Asian",       "type": "FX Exhaustion Gate",         "lot": 1.00, "h": 0,  "m": 30, "hold_mins": 60,  "symbols": ["EURJPY", "GBPJPY"]},
+    "ny_h21":       {"name": "NY H21",           "type": "NY Close JPY Reversion",    "lot": 1.50, "h": 21, "m": 0,  "hold_mins": 60,  "symbols": ["EURJPY", "GBPJPY"]},
+    "cpmc_z":       {"name": "CPMC Z",           "type": "Cross-Momentum Dislocation","lot": 1.40, "h": -1, "m": -1, "hold_mins": 45,  "symbols": ["EURAUD", "GBPAUD", "EURNZD"]},
 }
 
 # ─── SQLite read cache (broadcaster fires 1x/sec; don't hammer SQLite 4x/sec) ─
@@ -78,13 +77,7 @@ def _cached_trades(limit=20):
     return _cached(f"trades_{limit}", _build)
 
 def _normalize_closed_trade(t):
-    """Convert a SQLite trades row into the EXACT dict shape both JS tables expect.
-
-    updateAuditTable wants: symbol, type, entry_time, hold_min
-    updateRollingBacktest wants: sim_pnl, is_win, timestamp, gate_reason,
-                                 live_close_pnl, is_live, bug_reason
-    db rows use: pair, side, net_pnl, entry/exit_time, exit_reason.
-    """
+    """Convert a SQLite trades row into a plain closed-trade record."""
     hold_min = 0
     try:
         fmt = "%Y-%m-%d %H:%M:%S"
@@ -106,17 +99,10 @@ def _normalize_closed_trade(t):
         "exit_price":   float(t.get("exit_price", 0.0)),
         "pips":         float(t.get("pips", 0.0)),
         "net_pnl":      net,
+        "is_win":       net >= 0,
         "entry_time":   t.get("entry_time", ""),
         "exit_time":    t.get("exit_time", ""),
         "hold_min":     hold_min,
-        "sim_pnl":      net,
-        "is_win":       net >= 0,
-        "timestamp":    t.get("exit_time", ""),
-        "iso_timestamp": t.get("exit_time", ""),
-        "gate_reason":  None,
-        "live_close_pnl": net,
-        "is_live":      True,
-        "bug_reason":   "CLEAN EXECUTION",
     }
 
 def update_telemetry(key, value):
@@ -180,68 +166,31 @@ def _build_imminent(now_utc):
         regime = "Compression Zone 🟠"
 
     st = _cached_stats().get(best_cfg["name"], {})
-    target_win = st.get("avg_win", 0.0) if st.get("n") else round(best_cfg["lot"] * 195.0, 2)
+    target_win = st.get("avg_win") if st.get("n") else None
 
     return {
         "name":            best_cfg["name"],
         "regime":          regime,
         "countdown_formatted": f"{mins:02d}m {secs:02d}s",
         "next_symbol":     best_cfg["symbols"][0],
-        "direction":       "BUY",
+        "direction":       None,
         "confidence":      st.get("win_rate") if st.get("n") else None,
-        "target_win_usd":  round(target_win, 2),
+        "target_win_usd":  round(target_win, 2) if target_win else None,
     }
 
-def _build_radar(now_utc):
-    """Market radar metrics panel — REAL metrics from live MT5 when available,
-    graceful synthetic fallback when the engine hasn't pushed a snapshot yet."""
+def _build_radar():
+    """Market radar metrics panel — REAL metrics from the live MT5 snapshot only.
+    No synthetic fallback: until the engine pushes a real snapshot the UI shows '—'."""
     real = _telemetry_state.get("real_radar")
     if real and real.get("real"):
         return dict(real)
-
-    h = now_utc.hour
-    s = now_utc.second
-    ms = now_utc.microsecond // 1000
-
-    micro_vel = round(math.sin(s * 0.25) * 3.2 + math.cos(ms * 0.007) * 1.8, 1)
-    micro_disp = round(math.sin(s * 0.15) * 1.8, 1)
-    micro_agree = round(math.cos(s * 0.15) * 1.4, 1)
-
-    if 0 <= h < 7:
-        regime = "ASIAN SESSION 🟡"
-        desc   = "Asian FX Network Active"
-        base_disp  = 94.2
-        base_agree = 88.5
-        base_vel   = 18.4
-    elif 8 <= h < 12:
-        regime = "LONDON OPEN 🟢"
-        desc   = "High Volatility Breakout Zone"
-        base_disp  = 87.3
-        base_agree = 82.1
-        base_vel   = 22.1
-    elif 13 <= h < 17:
-        regime = "NY SESSION 🔵"
-        desc   = "NY Close Drive Window"
-        base_disp  = 91.5
-        base_agree = 85.7
-        base_vel   = 20.3
-    else:
-        regime = "COMPRESSION 🟠"
-        desc   = "Range Tightening Pre-Breakout"
-        base_disp  = 78.4
-        base_agree = 74.2
-        base_vel   = 12.1
-
-    vel = round(max(6.0, base_vel + micro_vel), 1)
-    disp = round(min(99.9, max(50.0, base_disp + micro_disp)), 1)
-    agree = round(min(99.9, max(50.0, base_agree + micro_agree)), 1)
-
     return {
-        "tick_velocity_per_sec":     vel,
-        "network_dispersion_pct":    disp,
-        "directional_agreement_pct": agree,
-        "volatility_regime":         regime,
-        "regime_description":        desc,
+        "tick_velocity_per_sec":     None,
+        "network_dispersion_pct":    None,
+        "directional_agreement_pct": None,
+        "volatility_regime":         "—",
+        "regime_description":        "Waiting for live MT5 data",
+        "blips":                     [],
         "real":                      False,
     }
 
@@ -273,8 +222,8 @@ def _build_predictions(now_utc):
         a_w   = st.get("avg_win", 0.0)
         a_l   = st.get("avg_loss", 0.0)
 
-        avg_win_usd  = round(a_w, 2) if n else round(cfg["lot"] * 25.0, 2)
-        avg_loss_usd = round(a_l, 2) if n else round(cfg["lot"] * 12.0, 2)
+        avg_win_usd  = round(a_w, 2) if n else None
+        avg_loss_usd = round(a_l, 2) if n else None
 
         cards.append({
             "name":            cfg["name"],
@@ -285,7 +234,7 @@ def _build_predictions(now_utc):
             "target_win_usd":  avg_win_usd,
             "target_loss_usd": avg_loss_usd,
             "next_symbol":     cfg["symbols"][0],
-            "direction":       "BUY",
+            "direction":       None,
             "win_rate":        wr,
             "profit_factor":   pf,
             "confidence":      wr,
@@ -293,48 +242,10 @@ def _build_predictions(now_utc):
         })
     return cards
 
-def _build_diagnostics(now_utc):
-    """Strategy gate diagnostics based on live engine state + REAL performance."""
-    stats = _cached_stats()
-    diags = []
-    h = now_utc.hour
-
-    for key, cfg in STRATEGY_META.items():
-        if cfg["h"] >= 0:
-            r = _countdown(cfg["h"], cfg["m"], now_utc)
-            total_secs = r[2] if r else 0
-            progress = max(0, min(100, 100 - (total_secs / 3600) * 100))
-            gate_open = total_secs < 300
-            gate_str  = "SESSION GATE OPEN ✅" if gate_open else f"WAITING — {int(total_secs // 60)}m until trigger"
-            primary   = f"UTC {cfg['h']:02d}:{cfg['m']:02d} Session Boundary"
-            blockage  = "None — Gate is open" if gate_open else f"Time gate: fires at {cfg['h']:02d}:{cfg['m']:02d} UTC"
-        else:
-            progress  = 85.0
-            gate_open = True
-            gate_str  = "REAL-TIME MONITORING ✅"
-            primary   = "Z-Score Threshold Event"
-            blockage  = "None — Real-time event-driven trigger"
-
-        st = stats.get(cfg["name"], {})
-        n  = st.get("n", 0)
-        wr = st.get("win_rate", cfg["wr"]) if n else cfg["wr"]
-
-        diags.append({
-            "name":              cfg["name"],
-            "status":            gate_str,
-            "progress_pct":      round(progress, 1),
-            "primary_gate":      primary,
-            "required_threshold":f"WR≥{cfg['wr']}%",
-            "current_value":     f"Live: {wr}% ({n} trades)" if n else f"Live: {wr}% (no closes yet)",
-            "blockage_reason":   blockage,
-        })
-    return diags
-
-def _build_exposure(now_utc):
+def _build_exposure():
     """Currency exposure table derived from active positions."""
-    ts  = _telemetry_state
-    pos = ts["active_positions"]
-    eq  = ts["account_equity"]
+    pos = _telemetry_state["active_positions"]
+    eq  = _telemetry_state["account_equity"]
 
     exposure_map = {}
     for p in pos:
@@ -361,15 +272,23 @@ def _build_exposure(now_utc):
             "risk_pct":           round(notional / max(eq, 1) * 100, 2),
         })
 
-    dd_pct = ts["daily_dd_pct"]
-    rows.insert(0, {
-        "currency":           "DAILY PnL",
-        "direction":          "LONG" if ts["daily_pnl"] >= 0 else "SHORT",
-        "net_exposure_lots":  round(ts["daily_pnl"] / 100, 2),
-        "exposure_usd":       round(ts["daily_pnl"], 2),
-        "risk_pct":           round(dd_pct, 2),
-    })
     return rows
+
+def _build_risk():
+    """Real daily risk payload: equity, daily PnL, DD%, shield status."""
+    ts = _telemetry_state
+    eq = ts["account_equity"]
+    dd = ts["daily_dd_pct"]
+    limit = 4.5
+    return {
+        "equity":          round(eq, 2),
+        "balance":         round(ts["account_balance"], 2),
+        "daily_pnl":       round(ts["daily_pnl"], 2),
+        "daily_dd_pct":    round(dd, 3),
+        "daily_limit_pct": limit,
+        "daily_limit_usd": round(eq * (limit / 100), 2),
+        "shield_active":   dd < limit,
+    }
 
 def _build_mt5_telemetry():
     """Active trades + closed audit records for the UI tables."""
@@ -507,24 +426,28 @@ def _build_vps_logs():
     """Return last 50 engine log lines."""
     return list(_telemetry_state["engine_logs"])[-50:]
 
-def _build_rolling_backtest():
-    """Real rolling/today metrics from the SQLite store."""
-    sigs = _telemetry_state["signals_today"]
-    total_sig = len(sigs)
+def _build_performance():
+    """Honest live performance payload from the SQLite store: real TODAY and
+    ALL-TIME aggregates + the equity series. No fake rolling/backtest framing."""
     stats = _cached_stats()
 
-    # Aggregate real stats across all strategies that have closed trades
-    n_total  = sum(s["n"] for s in stats.values())
-    wins     = sum(s["wins"] for s in stats.values())
-    net      = sum(s["net_pnl"] for s in stats.values())
+    # Real today (closed trades with entry_time today)
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    t_rows = db.trades_for_day(today)
+    t_n    = len(t_rows)
+    t_wins = sum(1 for t in t_rows if t["net_pnl"] > 0)
+    t_pnl  = round(sum(t["net_pnl"] for t in t_rows), 2)
+    t_wr   = round(t_wins / t_n * 100, 1) if t_n else 0.0
+
+    # Real all-time aggregates across all strategies with closed trades
+    n_total = sum(s["n"] for s in stats.values())
+    wins    = sum(s["wins"] for s in stats.values())
+    net     = sum(s["net_pnl"] for s in stats.values())
     gw = sum(s["avg_win"] * s["wins"] for s in stats.values())
     gl = sum(s["avg_loss"] * (s["n"] - s["wins"]) for s in stats.values())
 
     wr = round(wins / n_total * 100, 1) if n_total else 0.0
     pf = round(gw / gl, 2) if gl > 0 else (99.99 if gw > 0 else 0.0)
-
-    eq  = _telemetry_state["account_equity"]
-    net_pnl = net if n_total else 0.0
 
     # Real last-30d equity series for the chart
     eq_series = []
@@ -538,22 +461,10 @@ def _build_rolling_backtest():
     trades_norm = [_normalize_closed_trade(t) for t in trades]
 
     return {
-        "rolling_2hr_metrics": {
-            "win_rate_percent": wr,
-            "net_pnl_usd":      net_pnl,
-            "total_trades":     n_total,
-            "profit_factor":    pf,
-        },
-        "today_live_metrics": {
-            "live_win_rate_percent": wr,
-            "live_net_pnl_usd":     net_pnl,
-            "total_live_trades":    n_total,
-        },
-        "trades":          trades_norm,
-        "next_run_formatted": "05m 00s",
-        "last_run_time":   datetime.utcnow().strftime("%H:%M:%S UTC"),
-        "run_counter":     total_sig,
-        "equity_series":   eq_series[-500:],
+        "today":    {"win_rate_percent": t_wr, "net_pnl_usd": t_pnl, "total_trades": t_n, "wins": t_wins},
+        "all_time": {"win_rate_percent": wr, "net_pnl_usd": round(net, 2), "total_trades": n_total, "profit_factor": pf},
+        "trades":   trades_norm,
+        "equity_series": eq_series[-500:],
     }
 
 # ─── Flask Routes ─────────────────────────────────────────────────────────────
@@ -567,23 +478,18 @@ def page_overview():
 def page_logs():
     return render_template('logs.html', active_page='logs')
 
-@app.route('/diagnostics')
-def page_diagnostics():
-    return render_template('diagnostics.html', active_page='diagnostics')
-
+@app.route('/risk')
 @app.route('/analytics')
 @app.route('/rolling-backtest')
 @app.route('/yesterday-summary')
-def page_analytics():
-    return render_template('analytics.html', active_page='analytics')
+def page_risk():
+    return render_template('risk.html', active_page='risk')
 
-@app.route('/signals')
-def page_signals():
-    return render_template('signals.html', active_page='signals')
-
+@app.route('/trades')
 @app.route('/positions')
-def page_positions():
-    return render_template('positions.html', active_page='positions')
+@app.route('/signals')
+def page_trades():
+    return render_template('trades.html', active_page='trades')
 
 @app.route('/api/predictive_radar')
 def api_predictive_radar():
@@ -591,13 +497,13 @@ def api_predictive_radar():
     eq = _telemetry_state["account_equity"]
     return jsonify({
         "predictions":    _build_predictions(now_utc),
-        "radar":          _build_radar(now_utc),
+        "radar":          _build_radar(),
         "imminent":       _build_imminent(now_utc),
-        "exposure":       _build_exposure(now_utc),
+        "exposure":       _build_exposure(),
         "mt5_telemetry":  _build_mt5_telemetry(),
-        "diagnostics":    _build_diagnostics(now_utc),
+        "risk":           _build_risk(),
         "vps_logs":       _build_vps_logs(),
-        "rolling_backtest": _build_rolling_backtest(),
+        "performance":    _build_performance(),
         "signals_today":  _telemetry_state["signals_today"],
         "health":         _build_health(),
         "game":           _build_game_state(),
@@ -619,13 +525,13 @@ def _background_broadcaster():
             eq = _telemetry_state["account_equity"]
             socketio.emit('radar_update', {
                 "predictions":    _build_predictions(now_utc),
-                "radar":          _build_radar(now_utc),
+                "radar":          _build_radar(),
                 "imminent":       _build_imminent(now_utc),
-                "exposure":       _build_exposure(now_utc),
+                "exposure":       _build_exposure(),
                 "mt5_telemetry":  _build_mt5_telemetry(),
-                "diagnostics":    _build_diagnostics(now_utc),
+                "risk":           _build_risk(),
                 "vps_logs":       _build_vps_logs(),
-                "rolling_backtest": _build_rolling_backtest(),
+                "performance":    _build_performance(),
                 "signals_today":  _telemetry_state["signals_today"],
                 "health":         _build_health(),
                 "game":           _build_game_state(),

@@ -23,11 +23,9 @@
         </div>
         <nav class="nav-links">
             <a href="/" class="nav-item active"><i class="fa-solid fa-chart-line"></i> Overview</a>
-            <a href="/signals" class="nav-item"><i class="fa-solid fa-bolt"></i> Today's Signals</a>
-            <a href="/diagnostics" class="nav-item"><i class="fa-solid fa-microscope"></i> Diagnostics</a>
+            <a href="/trades" class="nav-item"><i class="fa-solid fa-list-check"></i> Trades</a>
+            <a href="/risk" class="nav-item"><i class="fa-solid fa-shield-halved"></i> Risk & PnL</a>
             <a href="/logs" class="nav-item"><i class="fa-solid fa-terminal"></i> Engine Logs</a>
-            <a href="/analytics" class="nav-item"><i class="fa-solid fa-shield-halved"></i> Risk & PnL</a>
-            <a href="/positions" class="nav-item"><i class="fa-solid fa-list-check"></i> Positions</a>
         </nav>
         <div class="account-profile-badge">
             <i class="fa-solid fa-shield-halved text-emerald"></i>
@@ -110,15 +108,15 @@
                     </div>
                 </div>
                 <div class="confidence-block">
-                    <span class="meta-label">PROVEN WIN RATE</span>
+                    <span class="meta-label">CONFIDENCE</span>
                     <div class="confidence-bar-wrap">
-                        <div class="confidence-bar-fill" id="imminentConfidenceFill" style="width: 95.3%;"></div>
+                        <div class="confidence-bar-fill" id="imminentConfidenceFill" style="width: 0%;"></div>
                     </div>
-                    <span class="confidence-val" id="imminentConfidenceVal">95.3%</span>
+                    <span class="confidence-val" id="imminentConfidenceVal">—</span>
                 </div>
                 <div class="target-pnl-block">
-                    <span class="meta-label">EXPECTED TARGET WIN</span>
-                    <span class="target-pnl-val text-emerald" id="imminentTargetWin">+$176.52</span>
+                    <span class="meta-label">AVG WIN (CLOSED TRADES)</span>
+                    <span class="target-pnl-val text-emerald" id="imminentTargetWin">—</span>
                 </div>
             </div>
         </section>
@@ -156,15 +154,10 @@
                     <div class="radar-sweep-ring r2"></div>
                     <div class="radar-sweep-ring r3"></div>
                     <div class="radar-sweep-center"><i class="fa-solid fa-crosshairs"></i></div>
-                    <div class="radar-blip" style="top:30%;left:62%;"></div>
-                    <div class="radar-blip" style="top:58%;left:30%;"></div>
-                    <div class="radar-blip" style="top:20%;left:40%;"></div>
                 </div>
                 <div class="radar-sweep-meta">
-                    <span class="meta-label">SWEEP REGIME</span>
-                    <strong class="text-cyan" id="radarSweepRegime">COMPRESSION</strong>
-                    <span class="meta-label" style="margin-top:0.4rem;">TICK VELOCITY</span>
-                    <strong class="font-mono" id="radarSweepVelocity">0.0</strong>
+                    <span class="meta-label">LIVE BLIPS</span>
+                    <strong class="text-cyan" id="radarSweepBlips">No live data</strong>
                 </div>
             </div>
             <div class="equity-chart-card">

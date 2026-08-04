@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>PROXIMA ALPHA ENGINE — Active Positions</title>
+    <title>PROXIMA ALPHA ENGINE — Trades</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
@@ -22,11 +22,9 @@
         </div>
         <nav class="nav-links">
             <a href="/" class="nav-item"><i class="fa-solid fa-chart-line"></i> Overview</a>
-            <a href="/signals" class="nav-item"><i class="fa-solid fa-bolt"></i> Today's Signals</a>
-            <a href="/diagnostics" class="nav-item"><i class="fa-solid fa-microscope"></i> Diagnostics</a>
+            <a href="/trades" class="nav-item active"><i class="fa-solid fa-list-check"></i> Trades</a>
+            <a href="/risk" class="nav-item"><i class="fa-solid fa-shield-halved"></i> Risk & PnL</a>
             <a href="/logs" class="nav-item"><i class="fa-solid fa-terminal"></i> Engine Logs</a>
-            <a href="/analytics" class="nav-item"><i class="fa-solid fa-shield-halved"></i> Risk & PnL</a>
-            <a href="/positions" class="nav-item active"><i class="fa-solid fa-list-check"></i> Positions</a>
         </nav>
         <div class="server-telemetry">
             <div class="status-indicator online" id="serverStatusDot"></div>
@@ -44,19 +42,43 @@
                 <div class="metric-subtext">Currently open in MT5</div>
             </div>
             <div class="radar-card" style="text-align:center;">
-                <div class="card-header"><i class="fa-solid fa-check-double text-cyan"></i><span>CLOSED TODAY</span></div>
-                <div class="metric-body"><span class="metric-value text-cyan" id="closedCount">0</span></div>
-                <div class="metric-subtext">Hard exits via hold timer</div>
+                <div class="card-header"><i class="fa-solid fa-bolt text-amber"></i><span>SIGNALS TODAY</span></div>
+                <div class="metric-body"><span class="metric-value text-amber" id="signalCount">0</span></div>
+                <div class="metric-subtext">Fired since midnight UTC</div>
             </div>
             <div class="radar-card" style="text-align:center;">
                 <div class="card-header"><i class="fa-solid fa-server text-purple"></i><span>ENGINE STATUS</span></div>
-                <div class="metric-body"><span class="metric-value-sm text-emerald" id="engineStatus">ONLINE</span></div>
-                <div class="metric-subtext" id="engineLatency">MT5 Bridge: — ms</div>
+                <div class="metric-body"><span class="metric-value-sm text-emerald" id="engineStatus">—</span></div>
+                <div class="metric-subtext" id="engineLatency">MT5 Bridge: —</div>
             </div>
         </div>
 
-        <!-- ACTIVE POSITIONS -->
+        <!-- SIGNALS FIRED TODAY -->
         <div class="section-title-bar" style="margin-bottom:12px;">
+            <h3><i class="fa-solid fa-bolt text-amber"></i> SIGNALS FIRED TODAY</h3>
+            <span class="subtitle">Strategy signals generated since midnight UTC — live execution log</span>
+        </div>
+        <div class="table-scroll-wrapper">
+            <table class="audit-table">
+                <thead>
+                    <tr>
+                        <th>#</th>
+                        <th>Time (UTC)</th>
+                        <th>Strategy</th>
+                        <th>Pair</th>
+                        <th>Side</th>
+                        <th>Lot</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody id="signalsTableBody">
+                    <tr><td colspan="7" style="text-align:center;color:var(--text-muted);padding:30px;">No signals fired today yet.</td></tr>
+                </tbody>
+            </table>
+        </div>
+
+        <!-- ACTIVE POSITIONS -->
+        <div class="section-title-bar" style="margin:20px 0 12px;">
             <h3><i class="fa-solid fa-circle-dot text-emerald"></i> ACTIVE POSITIONS — HOLD TIMER PROGRESS</h3>
             <span class="subtitle">Python engine managed hold timers — hard exit on M5 bar boundary</span>
         </div>
@@ -67,10 +89,10 @@
             </div>
         </div>
 
-        <!-- CLOSED TRADES -->
+        <!-- CLOSED TRADE AUDIT -->
         <div class="section-title-bar" style="margin-bottom:12px;">
             <h3><i class="fa-solid fa-list-check"></i> CLOSED TRADE AUDIT LOG</h3>
-            <span class="subtitle">Executed trades reconciliation — Python engine execution record</span>
+            <span class="subtitle">Most recent closed trades — real PnL from the trade store</span>
         </div>
         <div class="table-scroll-wrapper">
             <table class="audit-table">
@@ -83,12 +105,13 @@
                         <th>Side</th>
                         <th>Lot</th>
                         <th>Hold</th>
+                        <th>Pips</th>
                         <th>Net PnL</th>
-                        <th>Status</th>
+                        <th>Result</th>
                     </tr>
                 </thead>
                 <tbody id="closedTradesBody">
-                    <tr><td colspan="9" style="text-align:center;color:var(--text-muted);padding:30px;">No closed trades yet today.</td></tr>
+                    <tr><td colspan="10" style="text-align:center;color:var(--text-muted);padding:30px;">No closed trades yet.</td></tr>
                 </tbody>
             </table>
         </div>
@@ -105,17 +128,37 @@
 
     socket.on('radar_update', (data) => {
         const mt5 = data.mt5_telemetry || {};
-        const active = mt5.active_positions || mt5.trades || [];
-        const closed = mt5.trades || [];
+        const sigs = data.signals_today || [];
 
         document.getElementById('activeCount').textContent = mt5.active_count || 0;
-        document.getElementById('closedCount').textContent = closed.filter(t => t.exit_price).length;
-        document.getElementById('engineStatus').textContent = mt5.engine_status || 'ONLINE';
-        document.getElementById('engineLatency').textContent = `MT5 Bridge: ${mt5.latency_ms || 0}ms`;
+        document.getElementById('signalCount').textContent = sigs.length;
+        document.getElementById('engineStatus').textContent = mt5.engine_status || '—';
+        const lat = mt5.latency_ms;
+        document.getElementById('engineLatency').textContent = `MT5 Bridge: ${lat !== null && lat !== undefined ? lat + 'ms' : '—'}`;
+
+        // Signals table
+        const stBody = document.getElementById('signalsTableBody');
+        if (!sigs.length) {
+            stBody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--text-muted);padding:30px;">No signals fired today yet.</td></tr>';
+        } else {
+            stBody.innerHTML = '';
+            [...sigs].reverse().forEach((s, i) => {
+                stBody.innerHTML += `
+                    <tr>
+                        <td style="color:var(--text-muted);">${sigs.length - i}</td>
+                        <td><span class="font-mono">${s.time || '—'}</span></td>
+                        <td><strong>${s.strategy || '—'}</strong></td>
+                        <td><strong>${s.pair || '—'}</strong></td>
+                        <td><span class="dir-badge ${(s.side||'buy').toLowerCase()}">${s.side || '—'}</span></td>
+                        <td><span class="font-mono">${(s.lot||0).toFixed(2)}L</span></td>
+                        <td><span style="color:var(--accent-emerald);font-weight:700;">🟢 EXECUTED</span></td>
+                    </tr>`;
+            });
+        }
 
         // Active positions grid
         const grid = document.getElementById('activePositionsGrid');
-        const activeTrades = active.filter(t => !t.exit_price || t.exit_price == 0);
+        const activeTrades = (mt5.trades || []).filter(t => !t.exit_price || t.exit_price == 0);
         if (!activeTrades.length) {
             grid.innerHTML = `<div style="grid-column:1/-1;text-align:center;color:var(--text-muted);padding:40px;">
                 <i class="fa-solid fa-circle-dot" style="font-size:2rem;opacity:0.3;"></i>
@@ -124,16 +167,16 @@
         } else {
             grid.innerHTML = '';
             activeTrades.forEach(pos => {
-                const barsHeld = pos.hold_min ? Math.floor(pos.hold_min / 5) : (pos.bars_held || 0);
-                const holdBars = pos.hold_bars || 12;
+                const barsHeld = pos.hold_min ? Math.floor(pos.hold_min / 5) : 0;
+                const holdBars = 12;
                 const pct = Math.min(barsHeld / Math.max(holdBars, 1) * 100, 100);
                 const isLong = (pos.type || pos.side || 'BUY').toUpperCase() === 'BUY';
                 grid.innerHTML += `
                     <div style="background:rgba(255,255,255,0.03);border:1px solid rgba(16,185,129,0.2);border-left:3px solid var(--accent-emerald);border-radius:10px;padding:18px;">
                         <div style="display:flex;justify-content:space-between;margin-bottom:12px;">
                             <div>
-                                <div style="font-weight:700;font-size:1rem;">${pos.symbol || pos.pair}</div>
-                                <div style="font-size:0.75rem;color:var(--text-muted);">${pos.strategy} — #${pos.ticket}</div>
+                                <div style="font-weight:700;font-size:1rem;">${pos.symbol || pos.pair || '—'}</div>
+                                <div style="font-size:0.75rem;color:var(--text-muted);">${pos.strategy || '—'} — #${pos.ticket || '—'}</div>
                             </div>
                             <span class="dir-badge ${isLong ? 'buy' : 'sell'}">${isLong ? 'LONG' : 'SHORT'}</span>
                         </div>
@@ -150,25 +193,29 @@
             });
         }
 
-        // Closed trades table
+        // Closed trades (real, from performance.trades or mt5 trades with exit price)
+        const closed = (mt5.trades || []).filter(t => t.exit_price && t.net_pnl !== undefined) || (data.performance && data.performance.trades) || [];
+        const closedTrades = (mt5.trades || []).filter(t => t.ticket && t.exit_price && t.net_pnl !== undefined)
+            .concat((data.performance && data.performance.trades || []));
         const tbody = document.getElementById('closedTradesBody');
-        const closedTrades = closed.filter(t => t.ticket);
         if (!closedTrades.length) {
-            tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--text-muted);padding:30px;">No closed trades yet today.</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;color:var(--text-muted);padding:30px;">No closed trades yet.</td></tr>';
         } else {
             tbody.innerHTML = '';
-            closedTrades.slice().reverse().forEach(t => {
+            [...new Map(closedTrades.map(t => [t.ticket || t.entry_time, t])).values()].slice(-15).reverse().forEach(t => {
                 const isWin = (t.net_pnl || 0) >= 0;
+                const sign = isWin ? '+' : '';
                 tbody.innerHTML += `
                     <tr>
-                        <td class="font-mono">#${t.ticket}</td>
+                        <td class="font-mono">#${t.ticket || '—'}</td>
                         <td style="font-size:0.78rem;">${t.entry_time || '—'}</td>
                         <td><strong>${t.strategy || '—'}</strong></td>
                         <td><strong>${t.symbol || t.pair || '—'}</strong></td>
                         <td><span class="dir-badge ${(t.type||t.side||'buy').toLowerCase()}">${(t.type||t.side||'BUY').toUpperCase()}</span></td>
                         <td class="font-mono">${(t.lot||0).toFixed(2)}L</td>
                         <td class="font-mono">${t.hold_min || 0}m</td>
-                        <td><strong class="${isWin?'text-emerald':'text-rose'} font-mono">${isWin?'+':''}$${(t.net_pnl||0).toFixed(2)}</strong></td>
+                        <td class="font-mono">${(t.pips||0) >= 0 ? '+' : ''}${(t.pips||0)}p</td>
+                        <td><strong class="${isWin?'text-emerald':'text-rose'} font-mono">${sign}$${(t.net_pnl||0).toFixed(2)}</strong></td>
                         <td><span style="font-size:0.75rem;font-weight:700;">${isWin?'🟢 WIN':'🔴 LOSS'}</span></td>
                     </tr>`;
             });

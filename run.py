@@ -63,6 +63,7 @@ def _build_real_radar(bridge, df_dict):
     # 2. Real network dispersion & directional agreement from M5 returns
     #    Use CLOSED bars only — drop the currently-forming (last) candle to avoid
     #    lookahead into the live price.
+    blips = []
     try:
         ret_series = {}
         for sym, df in df_dict.items():
@@ -86,8 +87,27 @@ def _build_real_radar(bridge, df_dict):
             pos = int((last_returns > 0).sum())
             neg = int((last_returns < 0).sum())
             radar["directional_agreement_pct"] = round(max(pos, neg) / len(last_returns) * 100, 1)
+
+            # Real radar-sweep blips: one per symbol, angle spread around the dish,
+            # radius = recent |return| normalized, color = sign of latest return.
+            mags = np.abs(last_returns)
+            m_max = float(mags.max()) if mags.size and mags.max() > 0 else 1.0
+            for i, sym in enumerate(keys):
+                strength = float(mags[i]) / m_max
+                angle = (i / len(keys)) * 360.0 - 90.0
+                import math as _m
+                r = 12 + 30 * strength
+                blips.append({
+                    "symbol":  sym,
+                    "x":       round(50 + r * _m.cos(_m.radians(angle)), 1),
+                    "y":       round(50 + r * _m.sin(_m.radians(angle)), 1),
+                    "strength": round(strength, 2),
+                    "dir":     "up" if last_returns[i] > 0 else "down",
+                })
     except Exception:
         pass
+
+    radar["blips"] = blips
 
     # 3. Regime by UTC hour (session classification stays meaningful)
     h = datetime.now(timezone.utc).hour
@@ -191,7 +211,7 @@ def main():
                 df_dict = bridge.fetch_all_universes_df(list(all_symbols), count=300)
 
                 # Push live account state to Gaming UI telemetry
-                update_telemetry("mt5_latency_ms", 15)
+                update_telemetry("mt5_latency_ms", None)
 
                 acc_info = None
                 if HAS_MT5_LIB and mt5:

@@ -442,70 +442,6 @@ body.obsidian-theme {
     padding-top: 0.5rem;
 }
 
-/* GATE DIAGNOSTICS PAGE STYLES */
-.diagnostics-grid {
-    display: grid;
-    grid-template-columns: repeat(2, 1fr);
-    gap: 1.25rem;
-}
-
-.diag-card {
-    background: var(--bg-card);
-    border: 1px solid var(--border-color);
-    border-radius: 10px;
-    padding: 1.25rem;
-    display: flex;
-    flex-direction: column;
-    gap: 0.85rem;
-}
-
-.diag-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-}
-
-.diag-name {
-    font-size: 1.1rem;
-    font-weight: 700;
-}
-
-.diag-status-badge {
-    padding: 0.25rem 0.65rem;
-    border-radius: 6px;
-    font-size: 0.75rem;
-    font-weight: 700;
-}
-
-.diag-status-badge.waiting {
-    background: rgba(245, 158, 11, 0.15);
-    color: var(--accent-amber);
-    border: 1px solid rgba(245, 158, 11, 0.3);
-}
-
-.diag-status-badge.open {
-    background: rgba(16, 185, 129, 0.15);
-    color: var(--accent-emerald);
-    border: 1px solid rgba(16, 185, 129, 0.3);
-}
-
-.diag-thresholds {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 0.75rem;
-    background: rgba(0, 0, 0, 0.25);
-    padding: 0.75rem;
-    border-radius: 6px;
-}
-
-.diag-blockage-box {
-    background: rgba(244, 63, 94, 0.08);
-    border-left: 3px solid var(--accent-rose);
-    padding: 0.75rem;
-    font-size: 0.85rem;
-    color: #f87171;
-}
-
 /* VPS LOG CONSOLE STYLES */
 .console-wrapper {
     background: #080b10;
@@ -567,12 +503,6 @@ body.obsidian-theme {
 .log-line.info { color: var(--text-secondary); }
 
 /* EXPOSURE ANALYTICS */
-.analytics-grid {
-    display: grid;
-    grid-template-columns: 2fr 1fr;
-    gap: 1.25rem;
-}
-
 .exposure-heatmap-card, .risk-limits-card {
     background: var(--bg-card);
     border: 1px solid var(--border-color);
@@ -978,9 +908,29 @@ body.obsidian-theme {
     width: 7px;
     height: 7px;
     border-radius: 50%;
+    transform: translate(-50%, -50%);
     background: var(--accent-emerald);
     box-shadow: 0 0 8px var(--accent-emerald);
     animation: blipPulse 2s ease-in-out infinite;
+    z-index: 2;
+}
+
+.radar-blip.blip-up { background: var(--accent-emerald); box-shadow: 0 0 8px var(--accent-emerald); }
+.radar-blip.blip-down { background: var(--accent-rose); box-shadow: 0 0 8px var(--accent-rose); }
+
+.radar-blip-label {
+    position: absolute;
+    top: -14px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 0.6rem;
+    font-weight: 700;
+    font-family: var(--font-mono);
+    color: var(--text-secondary);
+    background: rgba(0, 0, 0, 0.55);
+    padding: 1px 4px;
+    border-radius: 3px;
+    white-space: nowrap;
 }
 
 @keyframes radarRotate {
@@ -1034,8 +984,6 @@ body.obsidian-theme {
     .strategy-cards-container { grid-template-columns: 1fr; }
     .banner-content-grid { grid-template-columns: 1fr; }
     .radar-sweep-grid { grid-template-columns: 1fr; }
-    .diagnostics-grid { grid-template-columns: 1fr; }
-    .analytics-grid { grid-template-columns: 1fr; }
     .account-profile-badge { display: none; }
     .server-telemetry { margin-left: auto; }
     .game-hud { flex-direction: column; align-items: flex-start; }
