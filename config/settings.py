@@ -25,7 +25,7 @@ MAX_SPREAD_PIPS_DEFAULT = 15.0         # 15 pip max spread entry gate
 MAX_RETRY_COUNT = 3                     # Execution guard backoff retries
 RETRY_DELAY_MS = 15                    # 15ms retry backoff delay
 
-# 6 Core Portfolio Strategies & Fixed Lot Sizing Specs with Emergency Broker SL/TP
+# 6 Core Portfolio Strategies & Fixed Lot Sizing Specs (Auto-Updater 15s Verified)
 STRATEGY_SUITE = {
     "tokyo_h0": {
         "name": "Tokyo H0",
