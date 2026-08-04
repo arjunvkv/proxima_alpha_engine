@@ -319,39 +319,10 @@ def main():
 
             # Continuous 1-second tick velocity & real-time animated market radar update
             try:
-                live_ticks = bridge.fetch_ticks(all_symbols)
-                if live_ticks and last_radar_snapshot:
-                    if not hasattr(bridge, '_prev_ticks'):
-                        bridge._prev_ticks = {}
-
-                    changed_ticks = 0
-                    up_moves = 0
-                    down_moves = 0
-
-                    for sym, t in live_ticks.items():
-                        bid = t.get("bid", 0.0)
-                        ask = t.get("ask", 0.0)
-                        mid = (bid + ask) / 2.0 if (bid and ask) else 0.0
-                        prev_mid = bridge._prev_ticks.get(sym)
-
-                        if prev_mid and mid > 0:
-                            if mid > prev_mid:
-                                up_moves += 1
-                                changed_ticks += 1
-                            elif mid < prev_mid:
-                                down_moves += 1
-                                changed_ticks += 1
-
-                        if mid > 0:
-                            bridge._prev_ticks[sym] = mid
-
-                    total_active = up_moves + down_moves
-                    agreement = round(max(up_moves, down_moves) / total_active * 100, 1) if total_active > 0 else 50.0
-
-                    last_radar_snapshot["tick_velocity_per_sec"] = round(float(changed_ticks), 1)
-                    last_radar_snapshot["directional_agreement_pct"] = agreement
+                last_radar_snapshot = _build_real_radar(bridge)
+                if last_radar_snapshot:
                     update_telemetry("real_radar", last_radar_snapshot)
-            except Exception:
+            except Exception as e:
                 pass
 
             time.sleep(1)

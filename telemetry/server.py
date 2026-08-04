@@ -185,7 +185,7 @@ def _build_radar():
     Ensures telemetry metrics never drop or reset to empty."""
     global _last_valid_radar
     real = _telemetry_state.get("real_radar")
-    if real and isinstance(real, dict):
+    if real is not None and isinstance(real, dict) and len(real) > 0:
         _last_valid_radar = dict(real)
         return _last_valid_radar
     if _last_valid_radar:
