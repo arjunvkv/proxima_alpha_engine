@@ -330,13 +330,31 @@ def _build_rolling_backtest():
 # ─── Flask Routes ─────────────────────────────────────────────────────────────
 
 @app.route('/')
-@app.route('/diagnostics')
+def page_overview():
+    return render_template('index.html', active_page='overview')
+
+@app.route('/logs')
 @app.route('/vps-logs')
+def page_logs():
+    return render_template('logs.html', active_page='logs')
+
+@app.route('/diagnostics')
+def page_diagnostics():
+    return render_template('diagnostics.html', active_page='diagnostics')
+
 @app.route('/analytics')
 @app.route('/rolling-backtest')
 @app.route('/yesterday-summary')
-def page_overview():
-    return render_template('index.html', active_page='overview')
+def page_analytics():
+    return render_template('analytics.html', active_page='analytics')
+
+@app.route('/signals')
+def page_signals():
+    return render_template('signals.html', active_page='signals')
+
+@app.route('/positions')
+def page_positions():
+    return render_template('positions.html', active_page='positions')
 
 @app.route('/api/predictive_radar')
 def api_predictive_radar():
