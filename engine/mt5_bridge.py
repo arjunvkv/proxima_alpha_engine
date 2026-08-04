@@ -168,7 +168,7 @@ class MT5Bridge:
                 pass
         return datetime.now(timezone.utc)
 
-    def fetch_m5_rates(self, symbol, count=300):
+    def fetch_m5_rates(self, symbol, count=300, exclude_forming=False):
         if not HAS_MT5_LIB or mt5 is None:
             return None
 
@@ -185,6 +185,13 @@ class MT5Bridge:
 
             df = pd.DataFrame(list(rates))
             df['time'] = pd.to_datetime(df['time'], unit='s') - self.tz_offset
+
+            if exclude_forming and len(df) > 1:
+                server_utc = self.get_server_utc_time()
+                last_bar = df['time'].iloc[-1]
+                if (server_utc.replace(tzinfo=None) - last_bar).total_seconds() < 300:
+                    df = df.iloc[:-1]
+
             df.set_index('time', inplace=True)
             return df
         except Exception as e:
@@ -287,10 +294,10 @@ class MT5Bridge:
             print(f"⚠️ [MT5Bridge] Error fetching history deals: {e}")
             return []
 
-    def fetch_all_universes_df(self, symbols_list, count=300):
+    def fetch_all_universes_df(self, symbols_list, count=300, exclude_forming=False):
         df_dict = {}
         for sym in symbols_list:
-            df = self.fetch_m5_rates(sym, count=count)
+            df = self.fetch_m5_rates(sym, count=count, exclude_forming=exclude_forming)
             if df is not None:
                 df_dict[sym] = df
         return df_dict

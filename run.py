@@ -209,7 +209,7 @@ def main():
                 last_eval_time = utc_now
                 print(f"\n⏰ [M5 Bar Boundary] {utc_now.strftime('%Y-%m-%d %H:%M:%S UTC')} — Evaluating Strategy Signals...")
 
-                df_dict = bridge.fetch_all_universes_df(list(all_symbols), count=300)
+                df_dict = bridge.fetch_all_universes_df(list(all_symbols), count=300, exclude_forming=True)
 
                 # Push live account state to Gaming UI telemetry
                 acc_info = None
