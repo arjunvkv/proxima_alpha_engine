@@ -1,6 +1,7 @@
 """
 Proxima Alpha Engine — Single Master Production Entry Point for Live Execution
 Connects MT5 Bridge, Execution Guard, Risk Manager, Strategy Evaluator, Position Tracker, Auto-Updater & Telemetry.
+SingleInstanceLock guaranteed to eliminate duplicate instances.
 """
 
 import os
@@ -20,6 +21,7 @@ except ImportError:
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from config.settings import STRATEGY_SUITE, MT5_PATH, MT5_SERVER_TIMEZONE_OFFSET_HOURS, DAILY_DRAWDOWN_LIMIT_PCT, MAX_SPREAD_PIPS_DEFAULT
+from engine.lock import SingleInstanceLock
 from engine.mt5_bridge import MT5Bridge
 from engine.execution_guard import ExecutionGuard
 from engine.risk_manager import RiskManager
@@ -29,6 +31,10 @@ from engine.auto_updater import AutoUpdater
 from telemetry.server import start_telemetry_server
 
 def main():
+    # 0. Acquire Single Instance Lock (Zero Duplicate Instances)
+    lock = SingleInstanceLock()
+    lock.acquire()
+
     print("=" * 115)
     print("PROXIMA ALPHA ENGINE — INITIALIZING LIVE INSTITUTIONAL SIDECAR EXECUTION...")
     print("=" * 115)
@@ -45,6 +51,7 @@ def main():
     bridge = MT5Bridge(mt5_path=MT5_PATH, timezone_offset_hours=MT5_SERVER_TIMEZONE_OFFSET_HOURS)
     if not bridge.connect():
         print("❌ Could not connect to MT5. Exiting...")
+        lock.release()
         return
 
     # 4. Initialize Execution Guard & Risk Manager
@@ -120,6 +127,7 @@ def main():
     finally:
         updater.stop()
         bridge.shutdown()
+        lock.release()
 
 if __name__ == "__main__":
     main()

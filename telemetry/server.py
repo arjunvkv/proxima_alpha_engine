@@ -1,6 +1,5 @@
 """
-Telemetry Broadcaster Server — High-throughput SocketIO dashboard server at http://127.0.0.1:8888.
-Cross-platform safe threading async_mode.
+Telemetry Broadcaster Server — High-throughput SocketIO dashboard server with dynamic port fallback.
 """
 
 import time
@@ -93,7 +92,13 @@ def index():
 
 def start_telemetry_server(port=8888):
     def run():
-        socketio.run(app, host='0.0.0.0', port=port, debug=False, use_reloader=False)
+        for p in range(port, port + 10):
+            try:
+                print(f"🟢 [Telemetry] Broadcaster server running at http://127.0.0.1:{p}")
+                socketio.run(app, host='0.0.0.0', port=p, debug=False, use_reloader=False, allow_unsafe_werkzeug=True)
+                break
+            except Exception:
+                continue
+
     thread = threading.Thread(target=run, daemon=True)
     thread.start()
-    print(f"🟢 [Telemetry] Broadcaster server running at http://127.0.0.1:{port}")
