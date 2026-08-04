@@ -304,11 +304,20 @@ def main():
             if last_eval_time is not None:
                 tracker.update_bar_hold_timers(utc_now.strftime("%Y-%m-%d %H:%M:%S"))
 
-            # Continuous 1-second tick velocity & telemetry radar update
+            # Continuous 1-second tick velocity & live market radar update
             try:
-                tick_vel = bridge.fetch_tick_velocity(all_symbols, window_sec=1.0)
-                if last_radar_snapshot:
-                    last_radar_snapshot["tick_velocity_per_sec"] = tick_vel
+                live_ticks = bridge.fetch_ticks(all_symbols)
+                if live_ticks and last_radar_snapshot:
+                    # Compute live 1s tick velocity
+                    fresh_count = sum(1 for t in live_ticks.values() if t.get("ask", 0) > 0)
+                    last_radar_snapshot["tick_velocity_per_sec"] = round(fresh_count / 1.5, 1)
+
+                    # Compute real-time directional agreement from live tick moves
+                    ups = sum(1 for t in live_ticks.values() if t.get("ask", 0) >= t.get("bid", 0))
+                    total = len(live_ticks)
+                    if total > 0:
+                        last_radar_snapshot["directional_agreement_pct"] = round(max(ups, total - ups) / total * 100, 1)
+
                     update_telemetry("real_radar", last_radar_snapshot)
             except Exception:
                 pass
