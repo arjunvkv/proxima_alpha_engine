@@ -68,7 +68,8 @@ document.addEventListener('DOMContentLoaded', () => {
         if (serverStatusText) serverStatusText.textContent = 'DISCONNECTED';
     });
 
-    socket.on('radar_update', (data) => {
+    function applyTelemetryUpdate(data) {
+        if (!data) return;
         if (imminentStrategyName) updatePredictiveHero(data.imminent);
         if (radarTickVelocity) updateMarketRadar(data.radar);
         if (radarSweep) updateRadarSweep(data.radar);
@@ -78,7 +79,22 @@ document.addEventListener('DOMContentLoaded', () => {
         if (accountProfileTitle) updateAccountProfile(data.config, data.health);
         if (equityCanvas) updateEquityChart(data.performance);
         checkForNewCloses(data.mt5_telemetry);
+    }
+
+    socket.on('radar_update', (data) => {
+        applyTelemetryUpdate(data);
     });
+
+    // 1-second fallback REST API poller to guarantee continuous 1s UI updates
+    setInterval(async () => {
+        try {
+            const res = await fetch('/api/predictive_radar');
+            if (res.ok) {
+                const data = await res.json();
+                applyTelemetryUpdate(data);
+            }
+        } catch (e) {}
+    }, 1000);
 
     function updatePredictiveHero(imm) {
         if (!imm) return;
