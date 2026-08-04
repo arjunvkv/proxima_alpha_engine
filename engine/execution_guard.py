@@ -4,7 +4,8 @@ Safe cross-platform import guard for Windows & Linux environments (via RPyC brid
 """
 
 import time
-from engine.mt5_bridge import mt5, HAS_MT5_LIB, rpyc_conn
+import engine.mt5_bridge as bridge_mod
+from engine.mt5_bridge import mt5, HAS_MT5_LIB
 
 class ExecutionGuard:
     def __init__(self, max_spread_pips=15.0, max_retries=3, retry_delay_ms=15):
@@ -45,8 +46,9 @@ class ExecutionGuard:
         return True, "SPREAD_OK"
 
     def _do_order_send(self, request):
-        if rpyc_conn is not None and hasattr(rpyc_conn.root, 'order_send'):
-            return rpyc_conn.root.order_send(request)
+        conn = getattr(bridge_mod, 'rpyc_conn', None)
+        if conn is not None and hasattr(conn.root, 'order_send'):
+            return conn.root.order_send(request)
         else:
             res = mt5.order_send(request)
             if res is None:
