@@ -31,6 +31,7 @@ class _TeeLogger:
         self._orig = original
     def write(self, msg):
         self._orig.write(msg)
+        self._orig.flush()
         if msg.strip():
             push_engine_log(msg)
     def flush(self):
