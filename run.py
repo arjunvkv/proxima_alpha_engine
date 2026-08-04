@@ -232,67 +232,6 @@ def main():
                             time.sleep(5)
                             continue
 
-                # Refresh live floating PnL on active positions + drop closed ones
-                try:
-                    removed = tracker.refresh_live_pnl(risk_mgr, bridge)
-                    if removed:
-                        print(f"🟢 [Tracker] {removed} position(s) closed externally — removed from active state.")
-                except Exception as e:
-                    print(f"⚠️ [Tracker] refresh_live_pnl error: {e}")
-
-                tracker.update_bar_hold_timers(utc_now.strftime("%Y-%m-%d %H:%M:%S"))
-
-                # Daily session rollover bookkeeping
-                day_key = utc_now.strftime("%Y-%m-%d")
-                if day_key != last_day_key:
-                    last_day_key = day_key
-                    risk_mgr.maybe_rollover_day(day_key)
-                    trades_today = db.trades_for_day(day_key)
-                    wins = sum(1 for t in trades_today if t["net_pnl"] > 0)
-                    db.upsert_daily_session(
-                        day=day_key,
-                        start_equity=risk_mgr.initial_day_equity or 0.0,
-                        end_equity=acc_info.equity if HAS_MT5_LIB and mt5 and acc_info else 0.0,
-                        pnl=round(sum(t["net_pnl"] for t in trades_today), 2),
-                        dd_pct=round(risk_mgr.daily_dd_pct, 3) if hasattr(risk_mgr, "daily_dd_pct") else 0.0,
-                        trades=len(trades_today),
-                        wins=wins,
-                    )
-
-                # Real market radar snapshot (recomputed at each bar, cached between broadcasts)
-                last_radar_snapshot = _build_real_radar(bridge, df_dict)
-                if last_radar_snapshot:
-                    update_telemetry("real_radar", last_radar_snapshot)
-
-                signals = evaluator.evaluate_all(df_dict, utc_now)
-                if signals:
-                    print(f"🔥 [Signals] Generated {len(signals)} Active Signals!")
-                    for sig in signals:
-                        strat_name = sig["strategy"]
-                        pair       = sig["pair"]
-                        side       = sig["side"]
-                        lot        = sig["lot"]
-                        cfg        = next(c for c in STRATEGY_SUITE.values() if c["name"] == strat_name)
-
-                        ticket, status, exec_price = guard.execute_market_order(
-                            symbol=pair,
-                            side=side,
-                            lot=lot,
-                            magic=cfg["magic"],
-                            comment=f"ProximaAlpha_{strat_name}",
-                            sl_pips=cfg.get("sl_pips"),
-                            tp_pips=cfg.get("tp_pips")
-                        )
-
-                        if ticket:
-                            db.insert_signal(strat_name, pair, side, lot,
-                                             utc_now.strftime("%Y-%m-%d %H:%M:%S"), executed=1)
-                            # Update active positions in telemetry
-                            cur_positions = list(tracker.active_positions.values())
-                            update_telemetry("active_positions", cur_positions)
-                            sigs_today = list(_telemetry_state["signals_today"])
-                            sigs_today.append({"strategy": strat_name, "pair": pair, "side": side, "lot": lot, "time": utc_now.strftime("%H:%M")})
-                            update_telemetry("signals_today", sigs_today[-50:])
                             tracker.add_position(
                                 ticket=ticket,
                                 strategy=strat_name,
@@ -303,6 +242,17 @@ def main():
                                 entry_time_str=utc_now.strftime("%Y-%m-%d %H:%M:%S"),
                                 entry_price=exec_price if exec_price else sig.get("entry_price")
                             )
+
+            # Continuous 1-second position tracking & hold timer checks
+            try:
+                removed = tracker.refresh_live_pnl(risk_mgr, bridge)
+                if removed:
+                    print(f"🟢 [Tracker] {removed} position(s) closed externally — removed from active state.")
+            except Exception as e:
+                print(f"⚠️ [Tracker] refresh_live_pnl error: {e}")
+
+            if last_eval_time is not None:
+                tracker.update_bar_hold_timers(utc_now.strftime("%Y-%m-%d %H:%M:%S"))
 
             time.sleep(1)
 
