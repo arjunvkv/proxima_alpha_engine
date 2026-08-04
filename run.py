@@ -129,7 +129,9 @@ def main():
                             side=side,
                             lot=lot,
                             magic=cfg["magic"],
-                            comment=f"ProximaAlpha_{strat_name}"
+                            comment=f"ProximaAlpha_{strat_name}",
+                            sl_pips=cfg.get("sl_pips"),
+                            tp_pips=cfg.get("tp_pips")
                         )
 
                         if ticket:

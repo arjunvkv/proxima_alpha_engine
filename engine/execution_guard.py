@@ -1,6 +1,7 @@
 """
 Institutional Execution Guard — Zero-Failure Order Placement & Exit Retry Engine
 Safe cross-platform import guard for Windows & Linux environments (via RPyC bridge).
+Includes wide broker-side emergency SL & TP support.
 """
 
 import time
@@ -60,9 +61,9 @@ class ExecutionGuard:
                 'comment': getattr(res, 'comment', '')
             }
 
-    def execute_market_order(self, symbol, side, lot, magic, comment=""):
+    def execute_market_order(self, symbol, side, lot, magic, comment="", sl_pips=None, tp_pips=None):
         if not HAS_MT5_LIB or mt5 is None:
-            print(f"🟢 [SimMode] Simulated Order: {symbol} {side} {lot}L")
+            print(f"🟢 [SimMode] Simulated Order: {symbol} {side} {lot}L (SL: {sl_pips}p, TP: {tp_pips}p)")
             return 99999, "SIM_SUCCESS"
 
         spread_ok, reason = self.check_spread_gate(symbol)
@@ -72,6 +73,8 @@ class ExecutionGuard:
 
         filling_mode = self.resolve_filling_mode(symbol)
         order_type = mt5.ORDER_TYPE_BUY if side.upper() == "BUY" else mt5.ORDER_TYPE_SELL
+        pip_sz = self._pip_size(symbol)
+        digits = 3 if "JPY" in symbol else 5
 
         for attempt in range(1, self.max_retries + 1):
             sym_info = mt5.symbol_info(symbol)
@@ -81,12 +84,29 @@ class ExecutionGuard:
 
             price = sym_info.ask if order_type == mt5.ORDER_TYPE_BUY else sym_info.bid
 
+            sl_price = 0.0
+            tp_price = 0.0
+
+            if sl_pips is not None and sl_pips > 0:
+                if order_type == mt5.ORDER_TYPE_BUY:
+                    sl_price = round(price - (sl_pips * pip_sz), digits)
+                else:
+                    sl_price = round(price + (sl_pips * pip_sz), digits)
+
+            if tp_pips is not None and tp_pips > 0:
+                if order_type == mt5.ORDER_TYPE_BUY:
+                    tp_price = round(price + (tp_pips * pip_sz), digits)
+                else:
+                    tp_price = round(price - (tp_pips * pip_sz), digits)
+
             request = {
                 "action": mt5.TRADE_ACTION_DEAL,
                 "symbol": symbol,
                 "volume": float(lot),
                 "type": order_type,
                 "price": price,
+                "sl": float(sl_price) if sl_price > 0 else 0.0,
+                "tp": float(tp_price) if tp_price > 0 else 0.0,
                 "deviation": 20,
                 "magic": int(magic),
                 "comment": comment,
@@ -98,7 +118,9 @@ class ExecutionGuard:
             if res is not None and res.get('retcode') == 10009:  # 10009 == TRADE_RETCODE_DONE
                 ticket = res.get('order', 0)
                 exec_price = res.get('price', price)
-                print(f"🟢 [ExecutionGuard] Order Executed! Ticket #{ticket} | {symbol} {side} {lot}L @ {exec_price}")
+                sl_str = f" | SL: {sl_price}" if sl_price > 0 else ""
+                tp_str = f" | TP: {tp_price}" if tp_price > 0 else ""
+                print(f"🟢 [ExecutionGuard] Order Executed! Ticket #{ticket} | {symbol} {side} {lot}L @ {exec_price}{sl_str}{tp_str}")
                 return ticket, "SUCCESS"
 
             err_code = res.get('retcode') if res else "UNKNOWN"
