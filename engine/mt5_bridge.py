@@ -50,7 +50,7 @@ def get_mt5():
     _ensure_wine_mt5_server()
     try:
         import rpyc
-        conn = rpyc.connect('127.0.0.1', 18812, config={'allow_all_attrs': True})
+        conn = rpyc.connect('127.0.0.1', 18812, config={'allow_all_attrs': True, 'allow_pickle': True})
         mt5 = conn.root.get_mt5()
         HAS_MT5_LIB = True
         print("🟢 [MT5Bridge] Connected to MT5 via Linux RPyC Bridge!")
@@ -138,7 +138,7 @@ class MT5Bridge:
             if rates is None or len(rates) == 0:
                 return None
 
-            df = pd.DataFrame(rates)
+            df = pd.DataFrame(list(rates))
             df['time'] = pd.to_datetime(df['time'], unit='s') - self.tz_offset
             df.set_index('time', inplace=True)
             return df

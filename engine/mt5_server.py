@@ -32,6 +32,12 @@ if __name__ == '__main__':
     server = ThreadedServer(
         MT5Service,
         port=18812,
-        protocol_config={'allow_all_attrs': True, 'allow_public_attrs': True, 'allow_getattr': True, 'allow_setattr': True}
+        protocol_config={
+            'allow_all_attrs': True,
+            'allow_public_attrs': True,
+            'allow_getattr': True,
+            'allow_setattr': True,
+            'allow_pickle': True
+        }
     )
     server.start()
