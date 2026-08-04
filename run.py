@@ -20,6 +20,7 @@ from config.settings import STRATEGY_SUITE, MT5_PATH, MT5_SERVER_TIMEZONE_OFFSET
 from engine.lock import SingleInstanceLock
 from engine.mt5_bridge import MT5Bridge
 from engine.execution_guard import ExecutionGuard
+from engine.latency import measure_call_latency
 from engine.risk_manager import RiskManager
 from engine.evaluator import StrategyEvaluator
 from engine.tracker import PositionTracker
@@ -211,11 +212,12 @@ def main():
                 df_dict = bridge.fetch_all_universes_df(list(all_symbols), count=300)
 
                 # Push live account state to Gaming UI telemetry
-                update_telemetry("mt5_latency_ms", None)
-
                 acc_info = None
                 if HAS_MT5_LIB and mt5:
-                    acc_info = bridge.account_info()
+                    measured_account = measure_call_latency(bridge.account_info)
+                    acc_info = measured_account.value
+                    update_telemetry("mt5_latency_ms", measured_account.latency_ms)
+
                     if acc_info:
                         risk_mgr.update_daily_baseline(acc_info.equity)
                         update_telemetry("account_equity", acc_info.equity)

@@ -35,7 +35,7 @@ STRATEGY_SUITE = {
         "lookback_bars": 6,             # 30m lookback
         "sl_pips": 50.0,                # Emergency wide broker SL
         "tp_pips": 60.0,                # Emergency wide broker TP
-        "top_n": 3,
+        "top_n": 5,
         "universe": [
             "EURJPY", "GBPJPY", "USDJPY", "AUDJPY", "CADJPY", "CHFJPY", "NZDJPY",
             "EURUSD", "GBPUSD", "AUDUSD", "NZDUSD", "USDCAD", "USDCHF",

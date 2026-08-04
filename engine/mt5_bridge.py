@@ -69,12 +69,25 @@ def get_mt5():
         HAS_MT5_LIB = True
         print("🟢 [MT5Bridge] Connected to MT5 via Linux RPyC Bridge!")
         return mt5, True
-    except Exception:
+    except ImportError:
+        print("⚠️ [MT5Bridge] RPyC not installed — cannot connect to Wine MT5 server. Install with: pip install rpyc")
+        mt5 = None
+        HAS_MT5_LIB = False
+        return None, False
+    except ConnectionRefusedError:
+        print("⚠️ [MT5Bridge] RPyC connection refused on port 18812 — Wine MT5 server not ready. Engine in sim mode.")
+        mt5 = None
+        HAS_MT5_LIB = False
+        return None, False
+    except Exception as e:
+        print(f"⚠️ [MT5Bridge] RPyC bridge connection failed: {e}. Engine in sim mode.")
         mt5 = None
         HAS_MT5_LIB = False
         return None, False
 
 mt5, HAS_MT5_LIB = get_mt5()
+if not HAS_MT5_LIB:
+    print("⚠️ [MT5Bridge] Module-level MT5 init failed — will retry in bridge.connect()")
 
 class MT5Bridge:
     def __init__(self, mt5_path=None, timezone_offset_hours=3):
@@ -102,8 +115,10 @@ class MT5Bridge:
                 equity = getattr(account_info, 'equity', 0.0)
                 print(f"🟢 [MT5Bridge] Connected to MT5 Account #{login} ({company}) | Balance: ${balance:,.2f} | Equity: ${equity:,.2f}")
                 return True
-        except Exception:
-            pass
+            else:
+                print("⚠️ [MT5Bridge] account_info() returned None — MT5 terminal may not be logged in.")
+        except Exception as e:
+            print(f"⚠️ [MT5Bridge] account_info() probe failed: {e}")
 
         # Native mode: call initialize() with path
         try:
