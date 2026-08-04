@@ -414,13 +414,12 @@ def start_telemetry_server(port=8888):
         for p in range(port, port + 5):
             try:
                 print(f"🟢 [Telemetry] Obsidian Gaming UI → http://0.0.0.0:{p}")
-                socketio.run(
-                    app,
+                app.run(
                     host='0.0.0.0',
                     port=p,
                     debug=False,
                     use_reloader=False,
-                    allow_unsafe_werkzeug=True
+                    threaded=True
                 )
                 break
             except OSError:
