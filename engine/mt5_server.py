@@ -113,13 +113,14 @@ class MT5Service(rpyc.Service):
         """Batch-fetch latest bid/ask/time for many symbols in one RPyC round-trip."""
         out = {}
         for sym in symbols:
+            mt5.symbol_select(sym, True)
             t = mt5.symbol_info_tick(sym)
             if t:
                 out[sym] = {
-                    'bid': float(t.bid),
-                    'ask': float(t.ask),
-                    'last': float(t.last),
-                    'time': int(t.time),
+                    'bid': float(getattr(t, 'bid', 0.0)),
+                    'ask': float(getattr(t, 'ask', 0.0)),
+                    'last': float(getattr(t, 'last', 0.0)),
+                    'time': int(getattr(t, 'time', 0)),
                 }
         return out
 
