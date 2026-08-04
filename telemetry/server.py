@@ -1,5 +1,6 @@
 """
 Telemetry Broadcaster Server — High-throughput SocketIO dashboard server at http://127.0.0.1:8888.
+Cross-platform safe threading async_mode.
 """
 
 import time
@@ -9,14 +10,14 @@ from flask_socketio import SocketIO
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'proxima_alpha_secret_2026'
-socketio = SocketIO(app, cors_allowed_origins="*", async_mode='eventlet')
+socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
 
 HTML_TEMPLATE = """
 <!DOCTYPE html>
 <html>
 <head>
     <title>PROXIMA ALPHA ENGINE — INSTITUTIONAL TELEMETRY</title>
-    <script src="https://cdn.socket.io/4.5.4/socket.io.min.str.js"></script>
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
     <style>
         body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #0a0e17; color: #e1e6ed; margin: 0; padding: 20px; }
         .header { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #1e293b; padding-bottom: 15px; margin-bottom: 20px; }
