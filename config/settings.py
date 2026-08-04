@@ -12,7 +12,7 @@ DATA_DIR = BASE_DIR / "data"
 STATE_FILE = DATA_DIR / "state.json"
 
 # MT5 Terminal Settings
-MT5_PATH = None                        # Auto-connects to the running MT5 terminal
+MT5_PATH = r"C:\Program Files\FTMO Global Markets MT5 Terminal\terminal64.exe"
 MT5_SERVER_TIMEZONE_OFFSET_HOURS = 3  # EET (UTC+3 summer offset)
 
 # Risk & Prop Firm Shield Guard
