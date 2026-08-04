@@ -210,6 +210,15 @@ def main():
         while True:
             utc_now = bridge.get_server_utc_time()
 
+            if last_radar_snapshot is None:
+                try:
+                    init_df = bridge.fetch_all_universes_df(list(all_symbols), count=300, exclude_forming=True)
+                    last_radar_snapshot = _build_real_radar(bridge, init_df)
+                    if last_radar_snapshot:
+                        update_telemetry("real_radar", last_radar_snapshot)
+                except Exception as e:
+                    print(f"⚠️ [Engine] Startup radar init error: {e}")
+
             if last_eval_time is None or (utc_now.minute % 5 == 0 and utc_now.minute != last_eval_time.minute):
                 last_eval_time = utc_now
                 print(f"\n⏰ [M5 Bar Boundary] {utc_now.strftime('%Y-%m-%d %H:%M:%S UTC')} — Evaluating Strategy Signals...")
