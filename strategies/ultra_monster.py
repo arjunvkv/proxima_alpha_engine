@@ -1,6 +1,6 @@
 """
 Ultra Monster ORB Breakout Engine — 9-Pair Range Breakout (76% - 84% Proven WR)
-Evaluates half-hourly breakouts (:00 & :30) across 9 FX pairs and picks single best pair.
+Evaluates half-hourly breakouts (:00 & :30) across 9 FX pairs on completed M5 candle close.
 """
 
 import pandas as pd
@@ -11,7 +11,7 @@ def _pip_size(symbol):
     return 0.01 if "JPY" in symbol else 0.0001
 
 def _get_bar_loc(df, timestamp):
-    t_clean = timestamp.replace(second=0, microsecond=0, tzinfo=None)
+    t_clean = timestamp.replace(second=0, microsecond=0)
     t_m5 = t_clean - timedelta(minutes=t_clean.minute % 5)
     t_str = t_m5.strftime("%Y-%m-%d %H:%M:%S")
 
@@ -33,7 +33,7 @@ def _get_bar_loc(df, timestamp):
 
 def evaluate_ultra_monster(df_dict, timestamp, config):
     """
-    Evaluates Ultra Monster breakout signals on :00 and :30 minute bars.
+    Evaluates Ultra Monster breakout signals on :00 and :30 minute completed bars.
     """
     if timestamp.minute not in config.get("triggers", [0, 30]):
         return []
@@ -47,20 +47,21 @@ def evaluate_ultra_monster(df_dict, timestamp, config):
 
     for pair in universe:
         df = df_dict.get(pair)
-        if df is not None and len(df) >= lookback + 1:
+        if df is not None and len(df) >= lookback + 2:
             try:
                 loc = _get_bar_loc(df, timestamp)
-                if loc is not None and loc >= lookback:
-                    window = df.iloc[loc - lookback:loc]
+                if loc is not None and loc >= lookback + 1:
+                    # Evaluate on last completed M5 bar (loc - 1) against prior 12-bar window
+                    window = df.iloc[loc - 1 - lookback:loc - 1]
                     range_high = window['high'].max()
                     range_low  = window['low'].min()
                     range_pips = (range_high - range_low) / _pip_size(pair)
 
                     if range_pips >= min_range_pips:
-                        curr_close = df.iloc[loc]['close']
-                        if curr_close > range_high:
+                        completed_close = df.iloc[loc - 1]['close']
+                        if completed_close > range_high:
                             candidates.append((pair, "BUY", range_pips))
-                        elif curr_close < range_low:
+                        elif completed_close < range_low:
                             candidates.append((pair, "SELL", range_pips))
             except Exception:
                 continue
