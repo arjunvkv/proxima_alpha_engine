@@ -8,7 +8,7 @@ import numpy as np
 from datetime import timedelta
 
 def _get_bar_loc(df, timestamp):
-    t_clean = timestamp.replace(second=0, microsecond=0)
+    t_clean = timestamp.replace(second=0, microsecond=0, tzinfo=None)
     t_m5 = t_clean - timedelta(minutes=t_clean.minute % 5)
     t_str = t_m5.strftime("%Y-%m-%d %H:%M:%S")
 
