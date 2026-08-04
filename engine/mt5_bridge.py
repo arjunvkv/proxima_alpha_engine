@@ -188,10 +188,13 @@ class MT5Bridge:
             df['time'] = pd.to_datetime(df['time'], unit='s') - self.tz_offset
 
             if exclude_forming and len(df) > 1:
-                server_utc = self.get_server_utc_time()
-                last_bar = df['time'].iloc[-1]
-                if (server_utc.replace(tzinfo=None) - last_bar).total_seconds() < 300:
-                    df = df.iloc[:-1]
+                try:
+                    last_bar_dt = pd.to_datetime(df['time'].iloc[-1]).tz_localize(None)
+                    server_utc_dt = self.get_server_utc_time().replace(tzinfo=None)
+                    if (server_utc_dt - last_bar_dt).total_seconds() < 300:
+                        df = df.iloc[:-1]
+                except Exception as ex:
+                    print(f"⚠️ [MT5Bridge] exclude_forming check exception: {ex}")
 
             df.set_index('time', inplace=True)
             return df
