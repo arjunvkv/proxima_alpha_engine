@@ -3,7 +3,7 @@ Auto-Updater Service — Polls Git every 15s and:
   - Hot-reloads strategy modules instantly (no restart needed)
   - Full process self-restart via os.execv() when critical files change
     (run.py, telemetry/server.py, config/settings.py, engine/*.py)
-nohup keeps the process alive through the self-restart transparently.
+  - Releases SingleInstanceLock before execv so re-binding succeeds 100%.
 """
 
 import os
@@ -41,10 +41,10 @@ HOT_RELOAD_MODULES = [
     "strategies.cpmc_z",
 ]
 
-
 class AutoUpdater:
-    def __init__(self, repo_dir, check_interval_sec=60):
+    def __init__(self, repo_dir, lock=None, check_interval_sec=15):
         self.repo_dir = Path(repo_dir)
+        self.lock = lock
         self.check_interval_sec = check_interval_sec
         self.running = False
         self._thread = None
@@ -53,10 +53,21 @@ class AutoUpdater:
         self.running = True
         self._thread = threading.Thread(target=self._poll_loop, daemon=True)
         self._thread.start()
-        print("🟢 [AutoUpdater] Git Push Auto-Puller started (60s interval). Critical-file changes → full self-restart.")
+        print(f"🟢 [AutoUpdater] Git Push Auto-Puller started ({self.check_interval_sec}s interval). Critical-file changes → full self-restart.")
 
     def stop(self):
         self.running = False
+
+    def _clean_git_locks(self):
+        try:
+            for lk in [
+                self.repo_dir / ".git" / "index.lock",
+                self.repo_dir / ".git" / "refs" / "remotes" / "origin" / "main.lock"
+            ]:
+                if lk.exists():
+                    lk.unlink()
+        except Exception:
+            pass
 
     def _changed_files(self):
         """Returns set of file paths changed by the last pull."""
@@ -76,13 +87,15 @@ class AutoUpdater:
         while self.running:
             time.sleep(self.check_interval_sec)
             try:
-                # Fetch latest from origin (shallow to save bandwidth)
+                self._clean_git_locks()
+
+                # Fetch latest from origin
                 subprocess.run(
-                    ["git", "fetch", "--depth=1", "origin", "main"],
+                    ["git", "fetch", "origin", "main"],
                     cwd=self.repo_dir, capture_output=True, text=True, timeout=20
                 )
 
-                # Compare local HEAD vs origin/main — handles behind AND diverged
+                # Compare local HEAD vs origin/main
                 local_sha = subprocess.run(
                     ["git", "rev-parse", "HEAD"],
                     cwd=self.repo_dir, capture_output=True, text=True
@@ -93,12 +106,12 @@ class AutoUpdater:
                     cwd=self.repo_dir, capture_output=True, text=True
                 ).stdout.strip()
 
-                if local_sha == remote_sha:
+                if not remote_sha or local_sha == remote_sha:
                     continue  # Already up to date
 
                 print(f"🚀 [AutoUpdater] New commit detected! {local_sha[:7]} → {remote_sha[:7]}. Syncing...")
 
-                # Force sync — handles behind, diverged, conflicts
+                # Force sync
                 subprocess.run(
                     ["git", "reset", "--hard", "origin/main"],
                     cwd=self.repo_dir, capture_output=True, text=True
@@ -131,15 +144,19 @@ class AutoUpdater:
 
     def _self_restart(self):
         """
-        Replace this process with a fresh copy of itself.
-        os.execv() swaps the process in-place — same PID group,
-        nohup/logs stay alive, port is re-bound on the new startup.
+        Release process lock and replace process in-place with os.execv().
         """
         print("♻️  [AutoUpdater] Self-restarting process now...")
+        if self.lock:
+            try:
+                self.lock.release()
+            except Exception:
+                pass
+
         try:
-            # Flush output before exec
             sys.stdout.flush()
             sys.stderr.flush()
         except Exception:
             pass
+
         os.execv(sys.executable, [sys.executable] + sys.argv)

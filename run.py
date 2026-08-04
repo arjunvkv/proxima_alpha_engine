@@ -56,7 +56,7 @@ def main():
 
     # 2. Start Git Push Auto-Updater Service
     repo_dir = str(Path(__file__).resolve().parent)
-    updater = AutoUpdater(repo_dir=repo_dir, check_interval_sec=15)
+    updater = AutoUpdater(repo_dir=repo_dir, lock=lock, check_interval_sec=15)
     updater.start()
 
     # 3. Initialize High-Speed MT5 Bridge
