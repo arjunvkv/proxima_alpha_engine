@@ -23,14 +23,12 @@ class ExecutionGuard:
             return mt5.ORDER_FILLING_IOC
 
         filling_mode = sym_info.filling_mode
-        if filling_mode & mt5.SYMBOL_FILLING_IOC:
+        if filling_mode & 2:
             return mt5.ORDER_FILLING_IOC
-        elif filling_mode & mt5.SYMBOL_FILLING_FOK:
+        elif filling_mode & 1:
             return mt5.ORDER_FILLING_FOK
-        elif filling_mode & mt5.SYMBOL_FILLING_RETURN:
-            return mt5.ORDER_FILLING_RETURN
         else:
-            return mt5.ORDER_FILLING_IOC
+            return mt5.ORDER_FILLING_RETURN
 
     def check_spread_gate(self, symbol):
         if not HAS_MT5_LIB or mt5 is None:
