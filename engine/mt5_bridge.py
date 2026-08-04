@@ -13,6 +13,7 @@ from datetime import datetime, timezone, timedelta
 
 mt5 = None
 HAS_MT5_LIB = False
+rpyc_conn = None
 
 def _ensure_wine_mt5_server():
     if sys.platform == 'win32':
@@ -33,7 +34,7 @@ def _ensure_wine_mt5_server():
         print(f"⚠️ [MT5Bridge] Auto-start RPyC server exception: {e}")
 
 def get_mt5():
-    global mt5, HAS_MT5_LIB
+    global mt5, HAS_MT5_LIB, rpyc_conn
     if HAS_MT5_LIB and mt5 is not None:
         return mt5, True
 
@@ -50,8 +51,8 @@ def get_mt5():
     _ensure_wine_mt5_server()
     try:
         import rpyc
-        conn = rpyc.connect('127.0.0.1', 18812, config={'allow_all_attrs': True, 'allow_pickle': True})
-        mt5 = conn.root.get_mt5()
+        rpyc_conn = rpyc.connect('127.0.0.1', 18812, config={'allow_all_attrs': True, 'allow_pickle': True})
+        mt5 = rpyc_conn.root.get_mt5()
         HAS_MT5_LIB = True
         print("🟢 [MT5Bridge] Connected to MT5 via Linux RPyC Bridge!")
         return mt5, True
@@ -67,8 +68,6 @@ class MT5Bridge:
         self.mt5_path = mt5_path
         self.tz_offset = timedelta(hours=timezone_offset_hours)
         self.connected = False
-
-    _using_rpyc = False  # class-level flag
 
     def connect(self):
         global mt5, HAS_MT5_LIB
@@ -133,8 +132,12 @@ class MT5Bridge:
             return None
 
         try:
-            mt5.symbol_select(symbol, True)
-            rates = mt5.copy_rates_from_pos(symbol, mt5.TIMEFRAME_M5, 0, count)
+            if rpyc_conn is not None and hasattr(rpyc_conn.root, 'fetch_m5_rates'):
+                rates = rpyc_conn.root.fetch_m5_rates(symbol, count)
+            else:
+                mt5.symbol_select(symbol, True)
+                rates = mt5.copy_rates_from_pos(symbol, mt5.TIMEFRAME_M5, 0, count)
+
             if rates is None or len(rates) == 0:
                 return None
 

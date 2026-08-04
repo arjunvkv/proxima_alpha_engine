@@ -1,6 +1,6 @@
 """
 MT5 RPyC Server — Runs inside Wine Python to bridge native MT5 C-Extension to Linux Python.
-Auto-initializes MT5 on startup so clients just call account_info, order_send, etc.
+Auto-initializes MT5 on startup and exposes clean data structures over RPyC socket.
 """
 import sys
 import rpyc
@@ -26,6 +26,26 @@ class MT5Service(rpyc.Service):
         return mt5
     def exposed_is_initialized(self):
         return _init_ok
+
+    def exposed_fetch_m5_rates(self, symbol, count=300):
+        mt5.symbol_select(symbol, True)
+        rates = mt5.copy_rates_from_pos(symbol, mt5.TIMEFRAME_M5, 0, count)
+        if rates is None or len(rates) == 0:
+            return None
+        # Convert numpy structured array to clean list of dicts for instant RPyC transfer
+        return [
+            {
+                'time': int(r[0]),
+                'open': float(r[1]),
+                'high': float(r[2]),
+                'low': float(r[3]),
+                'close': float(r[4]),
+                'tick_volume': int(r[5]),
+                'spread': int(r[6]),
+                'real_volume': int(r[7])
+            }
+            for r in rates
+        ]
 
 if __name__ == '__main__':
     print("[MT5 RPyC Server] Starting bridge server on port 18812...")
