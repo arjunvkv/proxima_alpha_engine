@@ -330,6 +330,11 @@ def _build_rolling_backtest():
 # ─── Flask Routes ─────────────────────────────────────────────────────────────
 
 @app.route('/')
+@app.route('/diagnostics')
+@app.route('/vps-logs')
+@app.route('/analytics')
+@app.route('/rolling-backtest')
+@app.route('/yesterday-summary')
 def page_overview():
     return render_template('index.html', active_page='overview')
 
