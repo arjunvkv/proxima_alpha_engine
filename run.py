@@ -10,12 +10,7 @@ import time
 from pathlib import Path
 from datetime import datetime, timezone
 
-try:
-    import MetaTrader5 as mt5
-    HAS_MT5_LIB = True
-except ImportError:
-    mt5 = None
-    HAS_MT5_LIB = False
+from engine.mt5_bridge import mt5, HAS_MT5_LIB, MT5Bridge
 
 # Add repo root to sys.path
 sys.path.insert(0, str(Path(__file__).resolve().parent))

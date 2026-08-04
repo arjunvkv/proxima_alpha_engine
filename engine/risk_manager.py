@@ -3,12 +3,7 @@ Risk Manager — Daily Drawdown Shield (4.5% FTMO Shield) & Cross-Pair Pip Value
 Safe cross-platform import guard.
 """
 
-try:
-    import MetaTrader5 as mt5
-    HAS_MT5_LIB = True
-except ImportError:
-    mt5 = None
-    HAS_MT5_LIB = False
+from engine.mt5_bridge import mt5, HAS_MT5_LIB
 
 class RiskManager:
     def __init__(self, daily_drawdown_limit_pct=0.045):

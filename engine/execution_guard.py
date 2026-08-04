@@ -4,12 +4,7 @@ Safe cross-platform import guard for Windows & Linux environments.
 """
 
 import time
-try:
-    import MetaTrader5 as mt5
-    HAS_MT5_LIB = True
-except ImportError:
-    mt5 = None
-    HAS_MT5_LIB = False
+from engine.mt5_bridge import mt5, HAS_MT5_LIB
 
 class ExecutionGuard:
     def __init__(self, max_spread_pips=15.0, max_retries=3, retry_delay_ms=15):
