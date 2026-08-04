@@ -5,6 +5,28 @@ Evaluates rolling 200-bar Z-scores on 15m returns for EURAUD & GBPAUD.
 
 import pandas as pd
 import numpy as np
+from datetime import timedelta
+
+def _get_bar_loc(df, timestamp):
+    t_clean = timestamp.replace(second=0, microsecond=0)
+    t_m5 = t_clean - timedelta(minutes=t_clean.minute % 5)
+    t_str = t_m5.strftime("%Y-%m-%d %H:%M:%S")
+
+    if isinstance(df.index, pd.DatetimeIndex):
+        if t_m5 in df.index:
+            return df.index.get_loc(t_m5)
+        elif t_str in df.index:
+            return df.index.get_loc(t_str)
+
+    if "time" in df.columns:
+        matches = df[df["time"] == t_str].index
+        if not matches.empty:
+            return matches[0]
+        matches_dt = df[df["time"] == t_m5].index
+        if not matches_dt.empty:
+            return matches_dt[0]
+
+    return None
 
 def evaluate_cppf_z(df_dict, timestamp, config):
     """
@@ -21,9 +43,8 @@ def evaluate_cppf_z(df_dict, timestamp, config):
         df = df_dict.get(pair)
         if df is not None and len(df) >= window + 3:
             try:
-                loc = df.index.get_loc(timestamp)
-                if loc >= window + 3:
-                    # 15m return (3 M5 bars)
+                loc = _get_bar_loc(df, timestamp)
+                if loc is not None and loc >= window + 3:
                     sub = df.iloc[loc - window - 3:loc + 1]
                     ret3 = (sub['close'] - sub['open'].shift(2)) / sub['open'].shift(2)
                     m200 = ret3.iloc[-window:].mean()
