@@ -29,6 +29,10 @@ def _get_bar_loc(df, timestamp):
         if not matches_dt.empty:
             return matches_dt[0]
 
+    # Fallback when exclude_forming=True is active: last row is target completed bar
+    if len(df) > 0:
+        return len(df) - 1
+
     return None
 
 def evaluate_ultra_monster(df_dict, timestamp, config):

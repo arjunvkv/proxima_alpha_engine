@@ -26,6 +26,9 @@ def _get_bar_loc(df, timestamp):
         if not matches_dt.empty:
             return matches_dt[0]
 
+    if len(df) > 0:
+        return len(df) - 1
+
     return None
 
 def evaluate_ny_h21(df_dict, timestamp, config):
