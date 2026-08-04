@@ -76,21 +76,40 @@ class AutoUpdater:
         while self.running:
             time.sleep(self.check_interval_sec)
             try:
-                subprocess.run(["git", "fetch", "--depth=1"], cwd=self.repo_dir, capture_output=True, text=True, timeout=15)
-                res_status = subprocess.run(["git", "status", "-uno"], cwd=self.repo_dir, capture_output=True, text=True)
+                # Fetch latest from origin (shallow to save bandwidth)
+                subprocess.run(
+                    ["git", "fetch", "--depth=1", "origin", "main"],
+                    cwd=self.repo_dir, capture_output=True, text=True, timeout=20
+                )
 
-                if "Your branch is behind" not in res_status.stdout:
-                    continue
+                # Compare local HEAD vs origin/main — handles behind AND diverged
+                local_sha = subprocess.run(
+                    ["git", "rev-parse", "HEAD"],
+                    cwd=self.repo_dir, capture_output=True, text=True
+                ).stdout.strip()
 
-                print("🚀 [AutoUpdater] New push detected on GitHub! Pulling...")
-                subprocess.run(["git", "pull", "origin", "main"], cwd=self.repo_dir, capture_output=True, text=True)
+                remote_sha = subprocess.run(
+                    ["git", "rev-parse", "origin/main"],
+                    cwd=self.repo_dir, capture_output=True, text=True
+                ).stdout.strip()
+
+                if local_sha == remote_sha:
+                    continue  # Already up to date
+
+                print(f"🚀 [AutoUpdater] New commit detected! {local_sha[:7]} → {remote_sha[:7]}. Syncing...")
+
+                # Force sync — handles behind, diverged, conflicts
+                subprocess.run(
+                    ["git", "reset", "--hard", "origin/main"],
+                    cwd=self.repo_dir, capture_output=True, text=True
+                )
 
                 changed = self._changed_files()
                 print(f"   Changed files: {', '.join(changed) or 'unknown'}")
 
                 needs_restart = bool(changed & CRITICAL_FILES) or not changed
                 if needs_restart:
-                    print("🔄 [AutoUpdater] Critical file changed — performing full process self-restart in 2s...")
+                    print("🔄 [AutoUpdater] Critical file changed — self-restarting in 2s...")
                     time.sleep(2)
                     self._self_restart()
                 else:
