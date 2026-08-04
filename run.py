@@ -28,7 +28,20 @@ from engine.risk_manager import RiskManager
 from engine.evaluator import StrategyEvaluator
 from engine.tracker import PositionTracker
 from engine.auto_updater import AutoUpdater
-from telemetry.server import start_telemetry_server
+from telemetry.server import start_telemetry_server, update_telemetry, _telemetry_state, push_engine_log
+
+class _TeeLogger:
+    """Mirrors all engine print() output to the Gaming UI console panel."""
+    def __init__(self, original):
+        self._orig = original
+    def write(self, msg):
+        self._orig.write(msg)
+        if msg.strip():
+            push_engine_log(msg)
+    def flush(self):
+        self._orig.flush()
+    def fileno(self):
+        return self._orig.fileno()
 
 def main():
     # 0. Acquire Single Instance Lock (Zero Duplicate Instances)
@@ -38,6 +51,9 @@ def main():
     print("=" * 115)
     print("PROXIMA ALPHA ENGINE — INITIALIZING LIVE INSTITUTIONAL SIDECAR EXECUTION...")
     print("=" * 115)
+
+    # Mirror all engine stdout to the Gaming UI log console
+    sys.stdout = _TeeLogger(sys.__stdout__)
 
     # 1. Start Telemetry Web Server
     start_telemetry_server(port=8888)
@@ -65,6 +81,8 @@ def main():
         all_symbols.update(strat["universe"])
 
     print(f"🟢 [Engine] Monitoring {len(all_symbols)} Symbols across 6 Active Strategies...")
+    update_telemetry("engine_status", "ONLINE")
+    update_telemetry("connected", HAS_MT5_LIB)
     print("=" * 115)
 
     last_eval_time = None
@@ -79,10 +97,19 @@ def main():
 
                 df_dict = bridge.fetch_all_universes_df(list(all_symbols), count=300)
 
+                # Push live account state to Gaming UI telemetry
+                update_telemetry("mt5_latency_ms", 15)
+
                 if HAS_MT5_LIB and mt5:
                     acc_info = mt5.account_info()
                     if acc_info:
                         risk_mgr.update_daily_baseline(acc_info.equity)
+                        update_telemetry("account_equity", acc_info.equity)
+                        update_telemetry("account_balance", acc_info.balance)
+                        if risk_mgr.initial_day_equity and risk_mgr.initial_day_equity > 0:
+                            dd_pct = (risk_mgr.initial_day_equity - acc_info.equity) / risk_mgr.initial_day_equity * 100
+                            update_telemetry("daily_pnl", round(acc_info.equity - risk_mgr.initial_day_equity, 2))
+                            update_telemetry("daily_dd_pct", round(dd_pct, 3))
                         shield_ok, shield_reason = risk_mgr.check_daily_drawdown_shield(acc_info.equity)
                         if not shield_ok:
                             print(f"🛑 [RiskShield] {shield_reason}. Skipping new entries.")
@@ -110,6 +137,12 @@ def main():
                         )
 
                         if ticket:
+                            # Update active positions in telemetry
+                            cur_positions = list(tracker.active_positions.values())
+                            update_telemetry("active_positions", cur_positions)
+                            sigs_today = list(_telemetry_state["signals_today"])
+                            sigs_today.append({"strategy": strat_name, "pair": pair, "side": side, "lot": lot, "time": utc_now.strftime("%H:%M")})
+                            update_telemetry("signals_today", sigs_today[-50:])
                             tracker.add_position(
                                 ticket=ticket,
                                 strategy=strat_name,

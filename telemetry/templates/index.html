@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PROXIMA X — Overview Dashboard</title>
+
+    <!-- Google Fonts & Icons -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+    <!-- CSS -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/obsidian_terminal.css') }}">
+
+    <!-- SocketIO -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.min.js"></script>
+</head>
+<body class="obsidian-theme">
+
+    <!-- TOP INSTITUTIONAL NAVBAR -->
+    <header class="top-nav">
+        <div class="brand-block">
+            <div class="logo-pulse"><i class="fa-solid fa-atom"></i></div>
+            <div class="brand-text">
+                <span class="brand-name">PROXIMA X</span>
+                <span class="brand-sub">PREDICTIVE QUANTITATIVE TERMINAL</span>
+            </div>
+        </div>
+
+        <nav class="nav-links">
+            <a href="/" class="nav-item active"><i class="fa-solid fa-chart-line"></i> Overview</a>
+            <a href="/rolling-backtest" class="nav-item"><i class="fa-solid fa-stopwatch-20"></i> 2H Rolling Test</a>
+            <a href="/yesterday-summary" class="nav-item"><i class="fa-solid fa-calendar-check"></i> Yesterday Run</a>
+            <a href="/diagnostics" class="nav-item"><i class="fa-solid fa-microscope"></i> Gate Diagnostics</a>
+            <a href="/vps-logs" class="nav-item"><i class="fa-solid fa-terminal"></i> VPS Live Logs</a>
+            <a href="/analytics" class="nav-item"><i class="fa-solid fa-layer-group"></i> Risk & Exposure</a>
+        </nav>
+
+        <div class="account-profile-badge">
+            <i class="fa-solid fa-shield-halved text-emerald"></i>
+            <div class="profile-info">
+                <span class="profile-title">$25,000 Capital Profile</span>
+                <span class="profile-meta">Daily Limit: $1,250.00 USD</span>
+            </div>
+        </div>
+
+        <div class="server-telemetry">
+            <div class="status-indicator online" id="serverStatusDot"></div>
+            <span class="status-text" id="serverStatusText">LIVE STREAMING</span>
+            <span class="timestamp-clock" id="liveClock">00:00:00 UTC</span>
+        </div>
+    </header>
+
+    <!-- OVERVIEW MAIN CONTAINER -->
+    <main class="dashboard-container">
+
+        <!-- 1. PREDICTIVE HERO BANNER: WHAT IS COMING NEXT -->
+        <section class="hero-predictive-banner shadow-glow">
+            <div class="banner-label">
+                <i class="fa-solid fa-radar fa-spin text-emerald"></i>
+                <span>WHAT IS COMING NEXT — NEXT IMMINENT EXECUTION</span>
+            </div>
+
+            <div class="banner-content-grid">
+                <div class="imminent-strategy-info">
+                    <span class="strategy-tag" id="imminentStrategyName">Ultra Monster (v107)</span>
+                    <span class="strategy-regime-sub" id="imminentRegime">Compression Breakout</span>
+                </div>
+
+                <div class="countdown-display-block">
+                    <span class="countdown-label">TIME UNTIL FIRE</span>
+                    <span class="countdown-digits" id="imminentCountdown">00m 00s</span>
+                </div>
+
+                <div class="prediction-target-block">
+                    <div class="target-symbol-badge" id="imminentSymbolBadge">
+                        <span class="sym-name" id="imminentSymbol">EURAUD</span>
+                        <span class="dir-badge buy" id="imminentDirection">BUY</span>
+                    </div>
+                </div>
+
+                <div class="confidence-block">
+                    <span class="meta-label">CONFIDENCE METER</span>
+                    <div class="confidence-bar-wrap">
+                        <div class="confidence-bar-fill" id="imminentConfidenceFill" style="width: 94.2%;"></div>
+                    </div>
+                    <span class="confidence-val" id="imminentConfidenceVal">94.2%</span>
+                </div>
+
+                <div class="target-pnl-block">
+                    <span class="meta-label">EXPECTED TARGET WIN</span>
+                    <span class="target-pnl-val text-emerald" id="imminentTargetWin">+$195.04</span>
+                </div>
+            </div>
+        </section>
+
+        <!-- 2. MULTI-HORIZON MARKET RADAR ANALYTICS GRID -->
+        <section class="radar-analytics-grid">
+            <div class="radar-card">
+                <div class="card-header">
+                    <i class="fa-solid fa-gauge-high text-cyan"></i>
+                    <span>TICK VELOCITY</span>
+                </div>
+                <div class="metric-body">
+                    <span class="metric-value" id="radarTickVelocity">18.4</span>
+                    <span class="metric-unit">ticks / sec</span>
+                </div>
+                <div class="metric-subtext" id="radarVelocityDesc">High Market Activity</div>
+            </div>
+
+            <div class="radar-card">
+                <div class="card-header">
+                    <i class="fa-solid fa-diagram-project text-purple"></i>
+                    <span>CURRENCY DISPERSION</span>
+                </div>
+                <div class="metric-body">
+                    <span class="metric-value text-purple" id="radarDispersion">94.2%</span>
+                </div>
+                <div class="metric-subtext">Network Volatility Percentile</div>
+            </div>
+
+            <div class="radar-card">
+                <div class="card-header">
+                    <i class="fa-solid fa-compass text-emerald"></i>
+                    <span>DIRECTIONAL AGREEMENT</span>
+                </div>
+                <div class="metric-body">
+                    <span class="metric-value text-emerald" id="radarAgreement">88.5%</span>
+                </div>
+                <div class="metric-subtext">Cross-Pair Consensus Rate</div>
+            </div>
+
+            <div class="radar-card">
+                <div class="card-header">
+                    <i class="fa-solid fa-wave-square text-amber"></i>
+                    <span>MARKET REGIME</span>
+                </div>
+                <div class="metric-body">
+                    <span class="metric-value-sm text-amber" id="radarRegime">COMPRESSION 🟡</span>
+                </div>
+                <div class="metric-subtext" id="radarRegimeDesc">Range Tightening Pre-Breakout</div>
+            </div>
+        </section>
+
+        <!-- 3. 6-STRATEGY EXECUTION TIMETABLE MATRIX -->
+        <section class="strategy-matrix-section">
+            <div class="section-title-bar">
+                <h3><i class="fa-solid fa-clock-rotate-left"></i> 6-STRATEGY PREDICTIVE TIMETABLE MATRIX ($25k PROFILE)</h3>
+                <span class="subtitle">Real-time execution countdowns & target outcomes</span>
+            </div>
+
+            <div class="strategy-cards-container" id="strategyCardsContainer">
+                <!-- Dynamically populated -->
+            </div>
+        </section>
+
+        <!-- 4. LIVE EXECUTED TRADE AUDIT TABLE -->
+        <section class="audit-table-section">
+            <div class="section-title-bar">
+                <h3><i class="fa-solid fa-list-check"></i> LIVE MT5 EXECUTED TRADES RECONCILIATION</h3>
+                <span class="subtitle">Side-by-side verification of executed trades on MT5 FTMO Account #1514168544</span>
+            </div>
+
+            <div class="table-scroll-wrapper">
+                <table class="audit-table">
+                    <thead>
+                        <tr>
+                            <th>Ticket / Time (UTC)</th>
+                            <th>Strategy Name</th>
+                            <th>Symbol</th>
+                            <th>Type</th>
+                            <th>Lot Size</th>
+                            <th>Entry → Exit Price</th>
+                            <th>Pips</th>
+                            <th>Realized Net PnL</th>
+                            <th>Hold Time</th>
+                            <th>Audit Status</th>
+                        </tr>
+                    </thead>
+                    <tbody id="auditTableBody">
+                        <!-- Dynamically populated -->
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+    </main>
+
+    <!-- JS APP -->
+    <script src="{{ url_for('static', filename='js/hud_app.js') }}"></script>
+</body>
+</html>
