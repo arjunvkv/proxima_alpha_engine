@@ -1,6 +1,6 @@
 """
 CPMC Z Momentum Engine — +3.5 Sigma Momentum Continuation Spike
-Evaluates rolling 200-bar Z-scores on 15m returns for GBPAUD & GBPNZD on completed M5 candle close.
+Evaluates rolling 200-bar Z-scores on 15m returns for GBPAUD & GBPNZD.
 """
 
 import pandas as pd
@@ -38,12 +38,11 @@ def evaluate_cpmc_z(df_dict, timestamp, config):
 
     for pair in universe:
         df = df_dict.get(pair)
-        if df is not None and len(df) >= window + 4:
+        if df is not None and len(df) >= window + 3:
             try:
                 loc = _get_bar_loc(df, timestamp)
                 if loc is not None and loc >= window + 3:
-                    # Evaluate up to loc (loc - 1 completed bar)
-                    sub = df.iloc[loc - window - 3:loc]
+                    sub = df.iloc[loc - window - 3:loc + 1]
                     ret3 = (sub['close'] - sub['open'].shift(2)) / sub['open'].shift(2)
                     m200 = ret3.iloc[-window:].mean()
                     s200 = ret3.iloc[-window:].std()

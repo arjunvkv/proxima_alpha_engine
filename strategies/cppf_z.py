@@ -1,6 +1,6 @@
 """
 CPPF Z Dislocation Engine — 6-Sigma Dislocation Reversion (85.0% Proven WR)
-Evaluates rolling 200-bar Z-scores on 15m returns for EURAUD & GBPAUD on completed M5 candle close.
+Evaluates rolling 200-bar Z-scores on 15m returns for EURAUD & GBPAUD.
 """
 
 import pandas as pd
@@ -30,7 +30,7 @@ def _get_bar_loc(df, timestamp):
 
 def evaluate_cppf_z(df_dict, timestamp, config):
     """
-    Evaluates CPPF Z dislocation signals on completed M5 bar close.
+    Evaluates CPPF Z dislocation signals on real-time M5 bar close.
     """
     window = config.get("rolling_window", 200)
     z_thresh = config.get("z_threshold", -6.0)
@@ -41,12 +41,11 @@ def evaluate_cppf_z(df_dict, timestamp, config):
 
     for pair in universe:
         df = df_dict.get(pair)
-        if df is not None and len(df) >= window + 4:
+        if df is not None and len(df) >= window + 3:
             try:
                 loc = _get_bar_loc(df, timestamp)
                 if loc is not None and loc >= window + 3:
-                    # Evaluate up to loc (loc - 1 completed bar)
-                    sub = df.iloc[loc - window - 3:loc]
+                    sub = df.iloc[loc - window - 3:loc + 1]
                     ret3 = (sub['close'] - sub['open'].shift(2)) / sub['open'].shift(2)
                     m200 = ret3.iloc[-window:].mean()
                     s200 = ret3.iloc[-window:].std()

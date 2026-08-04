@@ -1,6 +1,6 @@
 """
 Ultra Monster ORB Breakout Engine — 9-Pair Range Breakout (76% - 84% Proven WR)
-Evaluates half-hourly breakouts (:00 & :30) across 9 FX pairs on completed M5 candle close.
+Evaluates half-hourly breakouts (:00 & :30) across 9 FX pairs.
 """
 
 import pandas as pd
@@ -33,7 +33,7 @@ def _get_bar_loc(df, timestamp):
 
 def evaluate_ultra_monster(df_dict, timestamp, config):
     """
-    Evaluates Ultra Monster breakout signals on :00 and :30 minute completed bars.
+    Evaluates Ultra Monster breakout signals on :00 and :30 minute bars.
     """
     if timestamp.minute not in config.get("triggers", [0, 30]):
         return []
@@ -47,21 +47,20 @@ def evaluate_ultra_monster(df_dict, timestamp, config):
 
     for pair in universe:
         df = df_dict.get(pair)
-        if df is not None and len(df) >= lookback + 2:
+        if df is not None and len(df) >= lookback + 1:
             try:
                 loc = _get_bar_loc(df, timestamp)
-                if loc is not None and loc >= lookback + 1:
-                    # Evaluate on last completed M5 bar (loc - 1) against prior 12-bar window
-                    window = df.iloc[loc - 1 - lookback:loc - 1]
+                if loc is not None and loc >= lookback:
+                    window = df.iloc[loc - lookback:loc]
                     range_high = window['high'].max()
                     range_low  = window['low'].min()
                     range_pips = (range_high - range_low) / _pip_size(pair)
 
                     if range_pips >= min_range_pips:
-                        completed_close = df.iloc[loc - 1]['close']
-                        if completed_close > range_high:
+                        curr_close = df.iloc[loc]['close']
+                        if curr_close > range_high:
                             candidates.append((pair, "BUY", range_pips))
-                        elif completed_close < range_low:
+                        elif curr_close < range_low:
                             candidates.append((pair, "SELL", range_pips))
             except Exception:
                 continue
